@@ -1,0 +1,5 @@
+# 秘密情報・ローカルデータ（共有・コミットしない）
+.env
+saves/
+sites.json
+node_modules/

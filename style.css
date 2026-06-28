@@ -1,0 +1,60 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font-family: "Segoe UI", "Meiryo", sans-serif; font-size: 13px; color: #1c2330; }
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* 上部バー */
+#topbar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #1f2937; color: #fff; }
+#topbar .brand { font-weight: 700; margin-right: 6px; }
+#topbar .sep { width: 1px; height: 22px; background: #44506a; margin: 0 4px; }
+#topbar .info { opacity: .85; font-size: 12px; }
+.btn { background: #374151; color: #fff; border: 1px solid #4b5563; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+.btn:hover { background: #455066; }
+.btn.primary { background: #2563eb; border-color: #2563eb; }
+.btn.primary:hover { background: #1d4ed8; }
+.btn.scaleBtn.active { background: #2563eb; border-color: #2563eb; }
+.btn:disabled { opacity: .4; cursor: default; }
+
+/* メイン3カラム */
+#main { flex: 1; display: flex; min-height: 0; }
+#tools, #legend { width: 192px; background: #f3f5f9; border-right: 1px solid #d8deea; overflow-y: auto; padding: 8px; }
+#legend { border-right: none; border-left: 1px solid #d8deea; }
+.toolgroup { margin-bottom: 10px; }
+.grouptitle { font-size: 11px; color: #6b7280; font-weight: 700; text-transform: none; margin: 4px 2px 6px; }
+.tool { display: block; width: 100%; text-align: left; background: #fff; border: 1px solid #cdd5e3; border-radius: 6px; padding: 7px 9px; margin-bottom: 4px; cursor: pointer; font-size: 13px; }
+.tool:hover { border-color: #2563eb; }
+.tool.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.subopts { background:#fff; border:1px solid #cdd5e3; border-radius:6px; padding:6px; margin:-4px 0 10px; display:flex; gap:6px; }
+.subopts label { font-size:11px; color:#4b5563; display:flex; flex-direction:column; gap:2px; flex:1; }
+.subopts select { font-size:12px; padding:3px; }
+.hint { font-size: 11px; color: #6b7280; line-height: 1.6; margin-top: 8px; }
+
+/* キャンバス */
+#stageWrap { flex: 1; position: relative; background: #5b6472; overflow: hidden; }
+#stage { position: absolute; inset: 0; }
+.empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #e5e7eb; font-size: 15px; pointer-events: none; }
+
+/* 凡例リスト */
+.legrow { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px dashed #d8deea; }
+.legrow .sw { width: 18px; height: 14px; border-radius: 3px; flex: none; border: 1px solid #00000022; }
+.legrow .nm { flex: 1; font-size: 12px; }
+.legrow .qt { font-weight: 700; font-size: 13px; }
+.legrow .qt small { font-weight: 400; color: #6b7280; }
+.legsub { font-size: 11px; color: #6b7280; padding: 2px 4px 2px 30px; }
+.selinfo { font-size: 12px; background:#fff; border:1px solid #cdd5e3; border-radius:6px; padding:8px; line-height:1.7; }
+.selinfo .row { display:flex; justify-content:space-between; gap:6px; }
+.selinfo select, .selinfo input { font-size:12px; }
+.selinfo .del { margin-top:8px; }
+.del { background:#dc2626; color:#fff; border:none; border-radius:5px; padding:5px 8px; cursor:pointer; }
+.szbtn { background:#374151; color:#fff; border:none; border-radius:5px; width:26px; height:24px; cursor:pointer; font-size:14px; }
+.szbtn:hover { background:#2563eb; }
+
+/* 現場選択画面 */
+#picker { position: fixed; inset: 0; background: #1f2937; display: flex; align-items: center; justify-content: center; z-index: 50; }
+.pickbox { background: #fff; border-radius: 12px; width: 640px; max-width: 92vw; max-height: 86vh; display: flex; flex-direction: column; padding: 20px; box-shadow: 0 20px 60px #0008; }
+.pickbox h1 { margin: 0 0 12px; font-size: 20px; }
+#siteSearch { padding: 10px 12px; font-size: 14px; border: 1px solid #cdd5e3; border-radius: 8px; margin-bottom: 10px; }
+.sitelist { flex: 1; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+.siteitem { padding: 11px 14px; border-bottom: 1px solid #eef1f6; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+.siteitem:hover { background: #eff6ff; }
+.siteitem .reg { color: #6b7280; font-size: 12px; }
+.pickfoot { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>外構積算 拾いツール</title>
+<link rel="stylesheet" href="style.css">
+<!-- 外部ライブラリ(CDN): PDF描画 / キャンバス / PDF出力 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://unpkg.com/konva@9.3.6/konva.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<!-- 現場選択画面 -->
+<div id="picker">
+  <div class="pickbox">
+    <h1>現場を選択</h1>
+    <input type="text" id="siteSearch" placeholder="現場名で検索…">
+    <div id="siteList" class="sitelist">読み込み中…</div>
+    <div class="pickfoot">
+      <button class="btn" id="btnRescan">Driveを再スキャン</button>
+      <label class="btn">PDFを手動で開く<input type="file" id="pdfInputManual" accept="application/pdf" hidden></label>
+    </div>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+  <!-- 上部ツールバー -->
+  <header id="topbar">
+    <span class="brand">外構積算 拾い</span>
+    <button class="btn" id="btnBack">← 現場一覧</button>
+    <span id="siteName" class="info"></span>
+    <span class="sep"></span>
+    <span class="info">縮尺</span>
+    <button class="btn scaleBtn" data-denom="100">1/100</button>
+    <button class="btn scaleBtn" data-denom="150">1/150</button>
+    <span id="scaleInfo" class="info">未設定</span>
+    <span class="sep"></span>
+    <button class="btn" id="btnUndo" title="Ctrl+Z">元に戻す</button>
+    <button class="btn" id="btnRedo" title="Ctrl+Y">やり直す</button>
+    <button class="btn" id="btnClear" title="描画をすべて削除">全消去</button>
+    <button class="btn" id="btnFit" title="全体表示">全体表示</button>
+    <span class="sep"></span>
+    <button class="btn" id="btnSave" title="現場ごとに自動保存。手動でも保存できます">保存</button>
+    <span id="saveInfo" class="info"></span>
+    <button class="btn primary" id="btnExport">PDF出力</button>
+  </header>
+
+  <div id="main">
+    <!-- 左: ツール -->
+    <aside id="tools">
+      <div class="toolgroup">
+        <div class="grouptitle">操作</div>
+        <button class="tool" data-tool="select" title="V">選択 / 移動</button>
+        <button class="tool" data-tool="pan" title="Space">手のひら</button>
+      </div>
+      <div class="toolgroup">
+        <div class="grouptitle">ブロック</div>
+        <button class="tool" data-tool="block_curb" title="J">地先ブロック</button>
+        <button class="tool" data-tool="block_normal" title="B">普通ブロック</button>
+      </div>
+      <div id="blockOpts" class="subopts">
+        <label>段数
+          <select id="blockDan">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+      </div>
+      <div class="toolgroup">
+        <div class="grouptitle">範囲で拾う</div>
+        <button class="tool" data-tool="asphalt" title="A">アスファルト</button>
+        <button class="tool" data-tool="garden" title="G">庭・土</button>
+        <button class="tool" data-tool="gravel" title="K">砕石</button>
+        <button class="tool" data-tool="stairs" title="T">階段下地</button>
+      </div>
+      <div class="toolgroup">
+        <div class="grouptitle">スタンプ</div>
+        <button class="tool" data-tool="post">ポスト</button>
+        <button class="tool" data-tool="faucet">散水栓</button>
+        <button class="tool" data-tool="camera">防犯カメラ</button>
+      </div>
+      <div class="toolgroup">
+        <div class="grouptitle">凡例スタンプ</div>
+        <button class="tool" data-tool="legend">凡例（枠を描く）</button>
+      </div>
+      <div class="hint">
+        線/範囲: クリックで頂点、ダブルクリックか Enter で確定、Esc で取消、Backspace で1点戻す。<br>
+        Shift で直角/45°スナップ。ホイールでズーム、Space+ドラッグで移動。
+      </div>
+    </aside>
+
+    <!-- 中央: キャンバス -->
+    <div id="stageWrap">
+      <div id="stage"></div>
+      <div id="empty" class="empty">「配置図PDFを開く」から開始してください</div>
+    </div>
+
+    <!-- 右: 凡例＋数量 -->
+    <aside id="legend">
+      <div class="grouptitle">凡例 / 数量</div>
+      <div id="legendList"></div>
+      <div class="grouptitle" style="margin-top:14px">選択中</div>
+      <div id="selInfo" class="selinfo">なし</div>
+    </aside>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
