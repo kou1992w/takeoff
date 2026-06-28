@@ -420,12 +420,19 @@ function cancelDraft() { S.draft = null; S.previewLayer.destroyChildren(); S.pre
 function renderElement(el) {
   el.node = buildNode(el);
   el.node.draggable(S.tool === 'select');
+  el.node.on('dragstart', () => { el._dragStart = { x: el.node.x(), y: el.node.y() }; }); // 開始位置を記録(凡例/スタンプは原点≠0)
   el.node.on('dragend', () => onDragEnd(el));
   S.shapeLayer.add(el.node);
   S.shapeLayer.batchDraw();
 }
 function rebuildElement(el) { const d = el.node ? el.node.draggable() : (S.tool === 'select'); if (el.node) el.node.destroy(); renderElement(el); el.node.draggable(d); }
-function onDragEnd(el) { const dx = el.node.x(), dy = el.node.y(); el.points = el.points.map(p => ({ x: p.x + dx, y: p.y + dy })); if (el.labelPos) el.labelPos = { x: el.labelPos.x + dx, y: el.labelPos.y + dy }; rebuildElement(el); recalc(); }
+function onDragEnd(el) {
+  const s = el._dragStart || { x: 0, y: 0 };                 // 開始位置との差分が真の移動量
+  const dx = el.node.x() - s.x, dy = el.node.y() - s.y;
+  el.points = el.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+  if (el.labelPos) el.labelPos = { x: el.labelPos.x + dx, y: el.labelPos.y + dy };
+  rebuildElement(el); recalc();
+}
 function addStamp(cat, p) { const el = { id: S.idSeq++, cat, points: [{ x: p.x, y: p.y }] }; S.elements.push(el); renderElement(el); recalc(); }
 
 // 1要素のKonvaノードを生成(スタイル別)
