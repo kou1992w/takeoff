@@ -698,12 +698,23 @@ function selectElement(el) {
   } else if (cat.kind === 'area') {
     html += `<div class="row"><span>面積</span><b>${fmt(polyArea(el.points) * S.mPerPx * S.mPerPx, '㎡')}</b></div>`;
   } else html += `<div class="row"><span>スタンプ</span><span>1個</span></div>`;
+  if (CONVERT[el.cat]) html += `<button class="del" style="background:#2563eb;display:block;width:100%;margin-top:8px" onclick="changeCat()">${CATS[CONVERT[el.cat]].label}に変更</button>`;
   html += `<button class="del" onclick="deleteSelected()">削除</button>`;
   box.innerHTML = html;
 }
 function changeDan(v) {
   const el = S.selected; if (!el || el.cat !== 'block_normal') return;
   el.dan = parseInt(v, 10); rebuildElement(el); recalc(); selectElement(el);
+}
+// 種別の相互変換(アスファルト⇄砕石 / 普通ブロック⇄地先ブロック)
+const CONVERT = { asphalt: 'gravel', gravel: 'asphalt', block_normal: 'block_curb', block_curb: 'block_normal' };
+function changeCat() {
+  const el = S.selected; if (!el) return;
+  const to = CONVERT[el.cat]; if (!to) return;
+  el.cat = to;
+  if (to === 'block_curb') el.dan = 0;                                  // 地先は0段
+  else if (to === 'block_normal') el.dan = (el.dan && el.dan > 0) ? el.dan : 2; // 普通は段数が要る(既定2)
+  rebuildElement(el); recalc(); selectElement(el);
 }
 function legendFont(d) {
   const el = S.selected; if (!el || el.cat !== 'legend') return;
@@ -902,4 +913,5 @@ function drawElemToCtx(ctx, el) {
 
 window.deleteSelected = deleteSelected;
 window.changeDan = changeDan;
+window.changeCat = changeCat;
 init();
