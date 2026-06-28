@@ -120,6 +120,29 @@ function loadCostSettings() {
   };
 }
 
+// 階段下地の段数を保存図形(頂点+縮尺)から再計算。古い保存(stairsが面積㎡)も自動補正。
+// app.js の minRectShortSide / stairsStepCount と同じロジック(短辺÷0.3を四捨五入)。
+function minRectShortSide(pts) {
+  if (!Array.isArray(pts) || pts.length < 2) return 0;
+  let bestArea = Infinity, shortSide = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    let ux = b.x - a.x, uy = b.y - a.y; const L = Math.hypot(ux, uy); if (L < 1e-6) continue;
+    ux /= L; uy /= L; const vx = -uy, vy = ux;
+    let mU = Infinity, MU = -Infinity, mV = Infinity, MV = -Infinity;
+    for (const p of pts) { const du = p.x * ux + p.y * uy, dv = p.x * vx + p.y * vy; if (du < mU) mU = du; if (du > MU) MU = du; if (dv < mV) mV = dv; if (dv > MV) MV = dv; }
+    const w = MU - mU, h = MV - mV, area = w * h;
+    if (area < bestArea) { bestArea = area; shortSide = Math.min(w, h); }
+  }
+  return shortSide;
+}
+function recomputeStairsSteps(rec) {
+  const mPerPx = rec && rec.mPerPx; if (!mPerPx || !Array.isArray(rec.elements)) return null;
+  let steps = 0;
+  for (const el of rec.elements) if (el.cat === 'stairs') { const m = minRectShortSide(el.points) * mPerPx; if (m > 0) steps += Math.max(1, Math.round(m / 0.3)); }
+  return steps;
+}
+
 let sites = [];
 
 // ===== 配置図スキャン =====
@@ -246,7 +269,11 @@ const server = http.createServer((req, res) => {
   if (u.pathname === '/api/costsites') {
     const out = sites.map(s => {
       let quantities = null, savedAt = null;
-      try { const rec = JSON.parse(fs.readFileSync(savePath(s.key), 'utf8')); quantities = rec.quantities || null; savedAt = rec.savedAt || null; } catch { }
+      try {
+        const rec = JSON.parse(fs.readFileSync(savePath(s.key), 'utf8'));
+        quantities = rec.quantities || null; savedAt = rec.savedAt || null;
+        if (quantities) { const st = recomputeStairsSteps(rec); if (st != null) quantities = Object.assign({}, quantities, { stairs: st }); } // 階段は図形から段数を再計算(古い保存も補正)
+      } catch { }
       return { id: s.id, site: s.site, region: s.region, key: s.key, buildings: s.buildings || 1, quantities, savedAt };
     });
     res.writeHead(200, { 'Content-Type': MIME['.json'] });
