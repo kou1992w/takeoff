@@ -62,7 +62,7 @@ function lineW(kind) {
   return Math.max(realm / S.mPerPx, 1);
 }
 function stampRadius() { return S.mPerPx ? Math.max(0.2625 / S.mPerPx, 6) : 12; }
-function restyleStrokes() { for (const el of S.elements) rebuildElement(el); keepStampSizes(); }
+function restyleStrokes() { for (const el of S.elements) rebuildElement(el); keepStampSizes(); applyZOrder(); }  // 再生成後は重なり順を必ず再適用
 
 // ===== ツール選択 =====
 function setTool(t) {
@@ -441,7 +441,7 @@ function buildNode(el) {
     const txt = el.cat === 'block_curb' ? '地先' : `${el.dan}段`;
     const fz = S.mPerPx ? Math.max(0.32 / S.mPerPx, 9) : 13;
     const lab = new Konva.Label({ x: lp.x, y: lp.y, draggable: S.tool === 'select' });
-    lab.add(new Konva.Tag({ fill: 'rgba(255,255,255,0.85)', stroke: cat.color, strokeWidth: Math.max(fz * 0.04, 0.6), cornerRadius: fz * 0.25 }));
+    lab.add(new Konva.Tag({ fill: '#ffffff', stroke: cat.color, strokeWidth: Math.max(fz * 0.04, 0.6), cornerRadius: fz * 0.25 }));
     lab.add(new Konva.Text({ text: txt, fill: cat.color, fontStyle: 'bold', fontFamily: 'sans-serif', fontSize: fz, padding: fz * 0.18 }));
     lab.offsetX(lab.width() / 2); lab.offsetY(lab.height() / 2);   // lpを中心に配置
     lab.on('dragmove dragend', () => { el.labelPos = { x: lab.x(), y: lab.y() }; });
@@ -869,7 +869,7 @@ function drawElemToCtx(ctx, el) {
     const fz = S.mPerPx ? Math.max(0.32 / S.mPerPx, 9) : 13, pad = fz * 0.18;
     ctx.font = `bold ${fz.toFixed(0)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const tw = ctx.measureText(txt).width;
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(lp.x - tw / 2 - pad, lp.y - fz / 2 - pad, tw + pad * 2, fz + pad * 2);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(lp.x - tw / 2 - pad, lp.y - fz / 2 - pad, tw + pad * 2, fz + pad * 2);
     ctx.strokeStyle = cat.color; ctx.lineWidth = Math.max(fz * 0.04, 0.6); ctx.strokeRect(lp.x - tw / 2 - pad, lp.y - fz / 2 - pad, tw + pad * 2, fz + pad * 2);
     ctx.fillStyle = cat.color; ctx.fillText(txt, lp.x, lp.y);
     return;
