@@ -11,6 +11,7 @@ const DEFAULTS = {
   alloc: { asphalt: 0.60, block: 0.25, garden: 0.15 },
   coefBase: 1, coefTsumi: 1,
   adj: { asphalt: 1, block: 1, garden: 1 },
+  gravelRatio: 0.5,
 };
 const ST = { sites: [], settings: null };
 
@@ -21,7 +22,9 @@ function computeCost(q, buildings, st) {
   const blockPtTotal = (q.curb || 0) * pt.curb + (q.dan1 || 0) * pt.d1 + (q.dan2 || 0) * pt.d2 + (q.dan3 || 0) * pt.d3 + (q.dan4 || 0) * pt.d4 + (q.dan5 || 0) * pt.d5;
   const div = (a, d) => d > 0 ? a / d : 0;
   const coef = (ratio, adj) => 1 + (ratio - 1) * adj;
-  const cA = coef(div(div(q.asphalt || 0, b), st.std.asphalt), st.adj.asphalt);
+  // 砕石はアスファルト換算(×gravelRatio)でアス係数に算入
+  const asphaltEq = (q.asphalt || 0) + (q.gravel || 0) * (st.gravelRatio ?? 0.5);
+  const cA = coef(div(div(asphaltEq, b), st.std.asphalt), st.adj.asphalt);
   const cG = coef(div(div(q.garden || 0, b), st.std.garden), st.adj.garden);
   const cB = coef(div(div(blockPtTotal, b), st.std.blockPt), st.adj.block);
   const finalCoef = cA * st.alloc.asphalt + cB * st.alloc.block + cG * st.alloc.garden;
@@ -41,6 +44,7 @@ const SET_FIELDS = {
   s_alloc_asphalt: ['alloc', 'asphalt'], s_alloc_block: ['alloc', 'block'], s_alloc_garden: ['alloc', 'garden'],
   s_coefBase: ['coefBase'], s_coefTsumi: ['coefTsumi'],
   s_adj_asphalt: ['adj', 'asphalt'], s_adj_block: ['adj', 'block'], s_adj_garden: ['adj', 'garden'],
+  s_gravelRatio: ['gravelRatio'],
 };
 function fillSettings(st) {
   for (const id in SET_FIELDS) { const p = SET_FIELDS[id]; const v = p.length === 1 ? st[p[0]] : st[p[0]][p[1]]; document.getElementById(id).value = v; }

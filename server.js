@@ -103,6 +103,7 @@ const DEFAULT_COST = {
   alloc: { asphalt: 0.60, block: 0.25, garden: 0.15 }, // 最終係数への配分
   coefBase: 1, coefTsumi: 1,                            // ベース係数 / 積み係数
   adj: { asphalt: 1, block: 1, garden: 1 },            // 調整率(0〜1。1=単純比例)
+  gravelRatio: 0.5,                                    // 砕石→アスファルト換算率(砕石㎡×これをアス係数に算入)
 };
 function loadCostSettings() {
   let s = {}; try { s = JSON.parse(fs.readFileSync(COST_CFG, 'utf8')); } catch { }
@@ -113,6 +114,7 @@ function loadCostSettings() {
     alloc: { asphalt: num(s.alloc && s.alloc.asphalt, D.alloc.asphalt), block: num(s.alloc && s.alloc.block, D.alloc.block), garden: num(s.alloc && s.alloc.garden, D.alloc.garden) },
     coefBase: num(s.coefBase, D.coefBase), coefTsumi: num(s.coefTsumi, D.coefTsumi),
     adj: { asphalt: num(s.adj && s.adj.asphalt, D.adj.asphalt), block: num(s.adj && s.adj.block, D.adj.block), garden: num(s.adj && s.adj.garden, D.adj.garden) },
+    gravelRatio: num(s.gravelRatio, D.gravelRatio),
   };
 }
 
