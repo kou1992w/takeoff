@@ -770,7 +770,14 @@ function insetPolygon(pts, d) {
 function fmt(v, u) { if (v == null || isNaN(v)) return '— ' + u; return v.toFixed(u === 'm' ? 2 : 2) + ' ' + u; }
 
 // ===== 集計 + 凡例 =====
-function recalc() { renderLegend(); for (const el of S.elements) if (el.cat === 'legend' && el.node) rebuildElement(el); if (S.selected) selectElement(S.selected); if (S._loaded && !S._restoring) recordHistory(); scheduleSave(); }
+// 重なり順(z-order): 数値が大きいほど前面。普通ブロック>地先>スタンプ>階段下地>アスファルト>砕石>庭。凡例は最前面。
+const ZRANK = { garden: 0, gravel: 1, asphalt: 2, stairs: 3, post: 4, faucet: 4, camera: 4, block_curb: 5, block_normal: 6, legend: 7 };
+function applyZOrder() {
+  // 優先度の低い順に moveToTop していくと、最終的に高優先度が前面に並ぶ
+  S.elements.slice().sort((a, b) => (ZRANK[a.cat] ?? 0) - (ZRANK[b.cat] ?? 0)).forEach(el => { if (el.node) el.node.moveToTop(); });
+  S.shapeLayer.batchDraw();
+}
+function recalc() { renderLegend(); for (const el of S.elements) if (el.cat === 'legend' && el.node) rebuildElement(el); applyZOrder(); if (S.selected) selectElement(S.selected); if (S._loaded && !S._restoring) recordHistory(); scheduleSave(); }
 // ===== 履歴(元に戻す/やり直す) =====
 function recordHistory() {
   const snap = JSON.stringify(serializeState());
