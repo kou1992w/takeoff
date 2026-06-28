@@ -11,7 +11,7 @@ const CATS = {
   block_curb:   { label: '地先ブロック', color: '#1d4ed8', kind: 'line', unit: 'm', dan: false },
   asphalt: { label: 'アスファルト', color: '#0d9488', kind: 'area', unit: '㎡', style: 'hatch' },
   garden:  { label: '庭・土',      color: '#ea7a17', kind: 'area', unit: '㎡', style: 'cross' },
-  gravel:  { label: '砕石',        color: '#64748b', kind: 'area', unit: '㎡', style: 'fill' },
+  gravel:  { label: '砕石',        color: '#64748b', kind: 'area', unit: '㎡', style: 'hatch' },
   stairs:  { label: '階段下地',    color: '#7c3aed', kind: 'area', unit: '㎡', style: 'fill' },
   post:    { label: 'ポスト',      color: '#db2777', kind: 'stamp', unit: '個', mark: 'P' },
   faucet:  { label: '散水栓',      color: '#0891b2', kind: 'stamp', unit: '個', mark: 'S' },
