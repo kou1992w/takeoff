@@ -73,6 +73,7 @@ function setTool(t) {
   // 選択ツール以外では既存図形のドラッグを止める
   const sel = (t === 'select');
   S.shapeLayer.getChildren().forEach(n => n.draggable(sel));
+  S.elements.forEach(el => { if (el._label) el._label.draggable(sel); }); // 段数ラベルも追従
   S.stage.container().style.cursor = (t === 'pan') ? 'grab' : (t === 'select' ? 'default' : 'crosshair');
 }
 
@@ -135,13 +136,25 @@ async function openSite(s) {
 function serializeState() {
   return {
     v: 1, mPerPx: S.mPerPx, scaleDenom: S.scaleDenom, idSeq: S.idSeq,
-    elements: S.elements.map(e => ({ id: e.id, cat: e.cat, points: e.points, dan: e.dan, orient: e.orient, fontScale: e.fontScale })),
+    elements: S.elements.map(e => ({ id: e.id, cat: e.cat, points: e.points, dan: e.dan, orient: e.orient, fontScale: e.fontScale, labelPos: e.labelPos })),
+  };
+}
+// 費用算出(係数制度)用の数量サマリ。aggregate()の結果を現場合計の実寸でまとめる。
+function costQuantities() {
+  const agg = aggregate();
+  const dan = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  Object.entries(agg.block_normal.sub || {}).forEach(([k, v]) => { const n = parseInt(k, 10); if (dan[n] != null) dan[n] += v; });
+  return {
+    hasScale: !!S.mPerPx,
+    asphalt: agg.asphalt.qty, garden: agg.garden.qty, gravel: agg.gravel.qty, stairs: agg.stairs.qty,
+    curb: agg.block_curb.qty, dan1: dan[1], dan2: dan[2], dan3: dan[3], dan4: dan[4], dan5: dan[5],
+    post: agg.post.qty, faucet: agg.faucet.qty, camera: agg.camera.qty,
   };
 }
 async function saveState(manual) {
   if (!S.siteKey) return;
   try {
-    await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: S.siteKey, data: serializeState() }) });
+    await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: S.siteKey, data: serializeState(), quantities: costQuantities() }) });
     const t = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
     document.getElementById('saveInfo').textContent = (manual ? '保存しました ' : '自動保存 ') + t;
   } catch { document.getElementById('saveInfo').textContent = '保存失敗'; }
@@ -339,10 +352,13 @@ function setupStageEvents() {
   S.stage.on('click', e => {
     if (S.tool !== 'select') return;
     if (e.target === S.stage || e.target.getLayer() === S.bgLayer) { selectElement(null); return; }
-    const el = S.elements.find(el => el.node === e.target || el.node === e.target.getParent());
+    const el = findElByNode(e.target);
     if (el) selectElement(el);
   });
 }
+
+// クリックされたノードから上位をたどって対応する要素を探す(段数ラベル経由の選択にも対応)
+function findElByNode(target) { let n = target; for (let i = 0; i < 4 && n; i++) { const el = S.elements.find(e => e.node === n); if (el) return el; n = n.getParent(); } return null; }
 
 // ===== スナップ(ブロック等への吸い付きは廃止) =====
 function nearestOnSeg(p, a, b) { const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy || 1; let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2; t = Math.max(0, Math.min(1, t)); return { x: a.x + dx * t, y: a.y + dy * t }; }
@@ -409,7 +425,7 @@ function renderElement(el) {
   S.shapeLayer.batchDraw();
 }
 function rebuildElement(el) { const d = el.node ? el.node.draggable() : (S.tool === 'select'); if (el.node) el.node.destroy(); renderElement(el); el.node.draggable(d); }
-function onDragEnd(el) { const dx = el.node.x(), dy = el.node.y(); el.points = el.points.map(p => ({ x: p.x + dx, y: p.y + dy })); rebuildElement(el); recalc(); }
+function onDragEnd(el) { const dx = el.node.x(), dy = el.node.y(); el.points = el.points.map(p => ({ x: p.x + dx, y: p.y + dy })); if (el.labelPos) el.labelPos = { x: el.labelPos.x + dx, y: el.labelPos.y + dy }; rebuildElement(el); recalc(); }
 function addStamp(cat, p) { const el = { id: S.idSeq++, cat, points: [{ x: p.x, y: p.y }] }; S.elements.push(el); renderElement(el); recalc(); }
 
 // 1要素のKonvaノードを生成(スタイル別)
@@ -418,7 +434,21 @@ function buildNode(el) {
   const cat = CATS[el.cat];
   const flat = el.points.flatMap(p => [p.x, p.y]);
   if (cat.kind === 'line') {
-    return new Konva.Line({ points: flat, stroke: cat.color, strokeWidth: lineW('line'), strokeScaleEnabled: true, lineCap: 'round', lineJoin: 'round', hitStrokeWidth: 16 });
+    const g = new Konva.Group();
+    g.add(new Konva.Line({ points: flat, stroke: cat.color, strokeWidth: lineW('line'), strokeScaleEnabled: true, lineCap: 'round', lineJoin: 'round', hitStrokeWidth: 16 }));
+    // 段数/種別ラベル(白背景・ドラッグで移動可。位置はlabelPosに保存)
+    const lp = el.labelPos || polylineMidpoint(el.points);
+    const txt = el.cat === 'block_curb' ? '地先' : `${el.dan}段`;
+    const fz = S.mPerPx ? Math.max(0.32 / S.mPerPx, 9) : 13;
+    const lab = new Konva.Label({ x: lp.x, y: lp.y, draggable: S.tool === 'select' });
+    lab.add(new Konva.Tag({ fill: 'rgba(255,255,255,0.85)', stroke: cat.color, strokeWidth: Math.max(fz * 0.04, 0.6), cornerRadius: fz * 0.25 }));
+    lab.add(new Konva.Text({ text: txt, fill: cat.color, fontStyle: 'bold', fontFamily: 'sans-serif', fontSize: fz, padding: fz * 0.18 }));
+    lab.offsetX(lab.width() / 2); lab.offsetY(lab.height() / 2);   // lpを中心に配置
+    lab.on('dragmove dragend', () => { el.labelPos = { x: lab.x(), y: lab.y() }; });
+    lab.on('dragend', () => recalc());
+    el._label = lab;
+    g.add(lab);
+    return g;
   }
   if (cat.kind === 'stamp') {           // 枠線のみ。配置図の縮尺に追従(実寸サイズでズームと一緒に拡縮)
     const p = el.points[0]; const r = stampRadius(); const lw = Math.max(r * 0.2, 1.4); const g = new Konva.Group({ x: p.x, y: p.y });
@@ -466,10 +496,22 @@ function finishLegend(a, b) {
 // 現場で実際に使った項目のみ
 function usedCats() {
   const agg = aggregate(), items = [];
-  for (const key in CATS) { const a = agg[key]; const used = CATS[key].kind === 'stamp' ? a.qty > 0 : a.qty > 0.005; if (used) items.push({ key, cat: CATS[key], qty: a.qty }); }
+  for (const key in CATS) {
+    const cat = CATS[key], a = agg[key];
+    if (key === 'block_normal') {
+      // 普通ブロックは段数ごとに行を分け、段別の距離を表示
+      Object.keys(a.sub || {}).sort((x, y) => parseInt(x, 10) - parseInt(y, 10)).forEach(k => {
+        if (a.sub[k] > 0.005) items.push({ key, cat, qty: a.sub[k], label: `${cat.label} ${k}` });
+      });
+    } else {
+      const used = cat.kind === 'stamp' ? a.qty > 0 : a.qty > 0.005;
+      if (used) items.push({ key, cat, qty: a.qty, label: cat.label });
+    }
+  }
   return items;
 }
 function legendQty(it) { return it.cat.kind === 'stamp' ? it.qty : (S.mPerPx ? it.qty.toFixed(2) : '0'); }
+function legendName(it) { return it.label || it.cat.label; }
 // 凡例の見本アイコン(各カテゴリの描写スタイルを縮小再現)
 function legendIcon(it, x, y, sz) {
   const cat = it.cat, out = [], cx = x + sz / 2, cy = y + sz / 2, lw = Math.max(sz * 0.13, 1.4);
@@ -494,7 +536,7 @@ function legendIcon(it, x, y, sz) {
 // 文字幅の計測(指定px相当)。fontFamilyはKonvaの描画と合わせる
 let _measCtx;
 function measureText(t, fz) { if (!_measCtx) _measCtx = document.createElement('canvas').getContext('2d'); _measCtx.font = `${fz}px sans-serif`; return _measCtx.measureText(t).width; }
-function legendLabel(it) { return `${it.cat.label} ${legendQty(it)}${it.cat.unit}`; }
+function legendLabel(it) { return `${legendName(it)} ${legendQty(it)}${it.cat.unit}`; }
 // 枠(長方形)の中に必ず全項目が収まるよう、列数とフォントを自動決定
 function buildLegendNode(el) {
   const R = legendRect(el);
@@ -516,7 +558,7 @@ function buildLegendNode(el) {
     const textW = cw - icon - gap * 2 - cw * 0.02;
     if (textW <= 4) continue;
     let fit = ch * 0.34;                                 // 高さ上限(名称+数量の2行)
-    for (const it of items) { const w = Math.max(measureText(it.cat.label, 100), measureText(`${legendQty(it)}${it.cat.unit}`, 100)); fit = Math.min(fit, textW / (w * 1.04) * 100); } // 幅上限
+    for (const it of items) { const w = Math.max(measureText(legendName(it), 100), measureText(`${legendQty(it)}${it.cat.unit}`, 100)); fit = Math.min(fit, textW / (w * 1.04) * 100); } // 幅上限
     cands.push({ cols, rows, cw, ch, icon, gap, fit: Math.max(fit, 0) });
   }
   if (!cands.length) return g;
@@ -531,7 +573,7 @@ function buildLegendNode(el) {
     const cx = innerX + c * cw, cy = gridY + r * ch;
     legendIcon(it, cx + gap, cy + (ch - icon) / 2, icon).forEach(s => g.add(s));
     const tx = cx + gap + icon + gap;
-    g.add(new Konva.Text({ text: it.cat.label, x: tx, y: cy, height: ch * 0.5, verticalAlign: 'bottom', fontFamily: 'sans-serif', fontStyle: 'bold', fill: '#111', fontSize: fz }));
+    g.add(new Konva.Text({ text: legendName(it), x: tx, y: cy, height: ch * 0.5, verticalAlign: 'bottom', fontFamily: 'sans-serif', fontStyle: 'bold', fill: '#111', fontSize: fz }));
     g.add(new Konva.Text({ text: `${legendQty(it)}${it.cat.unit}`, x: tx, y: cy + ch * 0.5, height: ch * 0.5, verticalAlign: 'top', fontFamily: 'sans-serif', fill: '#374151', fontSize: fz * 0.95 }));
   });
   return g;
@@ -636,12 +678,22 @@ function selectElement(el) {
   let html = `<div class="row"><b>${cat.label}</b></div>`;
   if (cat.kind === 'line') {
     html += `<div class="row"><span>延長</span><b>${fmt(polylineLen(el.points) * S.mPerPx, 'm')}</b></div>`;
-    if (el.dan != null) html += `<div class="row"><span>段数</span><span>${el.dan}段</span></div>`;
+    if (el.cat === 'block_normal') {
+      html += `<div class="row"><span>段数</span><select onchange="changeDan(this.value)">`
+        + [1, 2, 3, 4, 5].map(n => `<option value="${n}"${n === el.dan ? ' selected' : ''}>${n}段</option>`).join('')
+        + `</select></div>`;
+    } else if (el.cat === 'block_curb') {
+      html += `<div class="row"><span>種別</span><span>地先</span></div>`;
+    }
   } else if (cat.kind === 'area') {
     html += `<div class="row"><span>面積</span><b>${fmt(polyArea(el.points) * S.mPerPx * S.mPerPx, '㎡')}</b></div>`;
   } else html += `<div class="row"><span>スタンプ</span><span>1個</span></div>`;
   html += `<button class="del" onclick="deleteSelected()">削除</button>`;
   box.innerHTML = html;
+}
+function changeDan(v) {
+  const el = S.selected; if (!el || el.cat !== 'block_normal') return;
+  el.dan = parseInt(v, 10); rebuildElement(el); recalc(); selectElement(el);
 }
 function legendFont(d) {
   const el = S.selected; if (!el || el.cat !== 'legend') return;
@@ -682,6 +734,18 @@ function drawCalibPreview(p) {
 
 // ===== 幾何 =====
 function polylineLen(pts) { let s = 0; for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return s; }
+// 折れ線の中点(全長の半分の位置)。段数ラベルの既定位置に使う
+function polylineMidpoint(pts) {
+  if (!pts || !pts.length) return { x: 0, y: 0 };
+  if (pts.length === 1) return { x: pts[0].x, y: pts[0].y };
+  const half = polylineLen(pts) / 2; let acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    if (acc + d >= half) { const t = (half - acc) / (d || 1); return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t }; }
+    acc += d;
+  }
+  return centroid(pts);
+}
 function polyArea(pts) { let a = 0; for (let i = 0; i < pts.length; i++) { const j = (i + 1) % pts.length; a += pts[i].x * pts[j].y - pts[j].x * pts[i].y; } return Math.abs(a) / 2; }
 function centroid(pts) { let x = 0, y = 0; pts.forEach(p => { x += p.x; y += p.y; }); return { x: x / pts.length, y: y / pts.length }; }
 function vnorm(v) { const l = Math.hypot(v.x, v.y) || 1; return { x: v.x / l, y: v.y / l }; }
@@ -734,7 +798,7 @@ function aggregate() {
     if (!S.mPerPx && cat.kind !== 'stamp') continue;
     if (cat.kind === 'line') {
       const len = polylineLen(el.points) * S.mPerPx; agg[el.cat].qty += len;
-      const k = el.dan != null ? el.dan + '段' : '';
+      const k = (el.dan != null && el.dan > 0) ? el.dan + '段' : '';   // 地先(0段)は段別内訳を作らない
       if (k) agg[el.cat].sub[k] = (agg[el.cat].sub[k] || 0) + len;
     } else if (cat.kind === 'area') {
       agg[el.cat].qty += polyArea(el.points) * S.mPerPx * S.mPerPx;
@@ -790,7 +854,19 @@ function drawElemToCtx(ctx, el) {
     ctx.fillStyle = cat.color; ctx.font = `bold ${(r * 1.4).toFixed(0)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(cat.mark, p.x, p.y); return;
   }
-  if (cat.kind === 'line') { pathCtx(ctx, el.points, false); ctx.strokeStyle = cat.color; ctx.lineWidth = lineW('line'); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(); return; }
+  if (cat.kind === 'line') {
+    pathCtx(ctx, el.points, false); ctx.strokeStyle = cat.color; ctx.lineWidth = lineW('line'); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+    // 段数/種別ラベル
+    const lp = el.labelPos || polylineMidpoint(el.points);
+    const txt = el.cat === 'block_curb' ? '地先' : `${el.dan}段`;
+    const fz = S.mPerPx ? Math.max(0.32 / S.mPerPx, 9) : 13, pad = fz * 0.18;
+    ctx.font = `bold ${fz.toFixed(0)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(txt).width;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(lp.x - tw / 2 - pad, lp.y - fz / 2 - pad, tw + pad * 2, fz + pad * 2);
+    ctx.strokeStyle = cat.color; ctx.lineWidth = Math.max(fz * 0.04, 0.6); ctx.strokeRect(lp.x - tw / 2 - pad, lp.y - fz / 2 - pad, tw + pad * 2, fz + pad * 2);
+    ctx.fillStyle = cat.color; ctx.fillText(txt, lp.x, lp.y);
+    return;
+  }
   // area
   if (cat.style === 'hatch') {
     const ins = insetPolygon(el.points, lineW('line') / 2 + 1);
@@ -808,4 +884,5 @@ function drawElemToCtx(ctx, el) {
 }
 
 window.deleteSelected = deleteSelected;
+window.changeDan = changeDan;
 init();
