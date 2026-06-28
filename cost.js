@@ -12,6 +12,7 @@ const DEFAULTS = {
   coefBase: 1, coefTsumi: 1,
   adj: { asphalt: 1, block: 1, garden: 1 },
   gravelRatio: 0.5,
+  stairsPerStep: 10000,
 };
 const ST = { sites: [], settings: null };
 
@@ -29,7 +30,8 @@ function computeCost(q, buildings, st) {
   const cB = coef(div(div(blockPtTotal, b), st.std.blockPt), st.adj.block);
   const finalCoef = cA * st.alloc.asphalt + cB * st.alloc.block + cG * st.alloc.garden;
   const perBuilding = st.fixed + st.base * finalCoef;
-  return { blockPtTotal, cA, cG, cB, finalCoef, perBuilding, total: perBuilding * b };
+  const stairsCost = (q.stairs || 0) * (st.stairsPerStep ?? 10000);   // 階段: 段数×単価を現場合計に加算
+  return { blockPtTotal, cA, cG, cB, finalCoef, perBuilding, stairsCost, total: perBuilding * b + stairsCost };
 }
 
 // ===== ユーティリティ =====
@@ -45,6 +47,7 @@ const SET_FIELDS = {
   s_coefBase: ['coefBase'], s_coefTsumi: ['coefTsumi'],
   s_adj_asphalt: ['adj', 'asphalt'], s_adj_block: ['adj', 'block'], s_adj_garden: ['adj', 'garden'],
   s_gravelRatio: ['gravelRatio'],
+  s_stairsPerStep: ['stairsPerStep'],
 };
 function fillSettings(st) {
   for (const id in SET_FIELDS) { const p = SET_FIELDS[id]; const v = p.length === 1 ? st[p[0]] : st[p[0]][p[1]]; document.getElementById(id).value = v; }
@@ -74,7 +77,7 @@ const COLS = [
   { h: 'アス㎡', f: q => n2(q.asphalt) },
   { h: '庭㎡', f: q => n2(q.garden) },
   { h: '砕石㎡', f: q => n2(q.gravel), detail: true },
-  { h: '階段㎡', f: q => n2(q.stairs), detail: true },
+  { h: '階段(段)', f: q => String(q.stairs || 0), detail: true },
   { h: '地先m', f: q => n2(q.curb) },
   { h: '1段', f: q => n2(q.dan1), detail: true },
   { h: '2段', f: q => n2(q.dan2), detail: true },
@@ -87,6 +90,7 @@ const COLS = [
   { h: '庭係数', f: (q, r) => n3(r.cG), detail: true },
   { h: '最終係数', f: (q, r) => n3(r.finalCoef) },
   { h: '1棟金額', f: (q, r) => yen(r.perBuilding), cls: 'money' },
+  { h: '階段費', f: (q, r) => yen(r.stairsCost), cls: 'money' },
   { h: '現場合計', f: (q, r) => yen(r.total), cls: 'money' },
 ];
 function newCell(col, tag) {

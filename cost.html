@@ -76,6 +76,7 @@
       <label>標準 庭(㎡)<input type="number" id="s_std_garden" step="1"></label>
       <label>標準 ブロック(pt)<input type="number" id="s_std_blockPt" step="0.5"></label>
       <label>砕石→アス換算率<input type="number" id="s_gravelRatio" step="0.1" min="0" max="1"></label>
+      <label>階段 1段あたり(円)<input type="number" id="s_stairsPerStep" step="1000"></label>
       <label>配分 アスファルト<input type="number" id="s_alloc_asphalt" step="0.05"></label>
       <label>配分 ブロック<input type="number" id="s_alloc_block" step="0.05"></label>
       <label>配分 庭<input type="number" id="s_alloc_garden" step="0.05"></label>
@@ -93,7 +94,7 @@
     </div>
     <div class="sub" style="margin-top:8px">
       ブロック種別ポイント = 地先:ベース×1.5 / n段:ベース＋積み×n。標準現場・棟数1で 1棟45万円。
-      砕石はアスファルト換算（既定0.5＝アスの半分）でアス係数に算入。階段下地・スタンプは係数に含みません（ポスト等は固定費でカバー）。
+      砕石はアスファルト換算（既定0.5）でアス係数に算入。階段下地は段数（短手÷0.3を四捨五入）×単価を現場合計に加算。スタンプは固定費でカバー。
     </div>
   </div>
 

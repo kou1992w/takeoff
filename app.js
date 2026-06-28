@@ -12,7 +12,7 @@ const CATS = {
   asphalt: { label: 'アスファルト', color: '#0d9488', kind: 'area', unit: '㎡', style: 'hatch' },
   garden:  { label: '庭・土',      color: '#ea7a17', kind: 'area', unit: '㎡', style: 'cross' },
   gravel:  { label: '砕石',        color: '#64748b', kind: 'area', unit: '㎡', style: 'hatch' },
-  stairs:  { label: '階段下地',    color: '#7c3aed', kind: 'area', unit: '㎡', style: 'fill' },
+  stairs:  { label: '階段下地',    color: '#7c3aed', kind: 'area', unit: '段', style: 'fill' },
   post:    { label: 'ポスト',      color: '#db2777', kind: 'stamp', unit: '個', mark: 'P' },
   faucet:  { label: '散水栓',      color: '#0891b2', kind: 'stamp', unit: '個', mark: 'S' },
   camera:  { label: '防犯カメラ',  color: '#ea580c', kind: 'stamp', unit: '個', mark: 'C' },
@@ -517,7 +517,11 @@ function usedCats() {
   }
   return items;
 }
-function legendQty(it) { return it.cat.kind === 'stamp' ? it.qty : (S.mPerPx ? it.qty.toFixed(2) : '0'); }
+function legendQty(it) {
+  if (it.cat.kind === 'stamp') return it.qty;
+  if (!S.mPerPx) return '0';
+  return it.key === 'stairs' ? Math.round(it.qty) : it.qty.toFixed(2);   // 階段は整数の段数
+}
 function legendName(it) { return it.label || it.cat.label; }
 // 凡例の見本アイコン(各カテゴリの描写スタイルを縮小再現)
 function legendIcon(it, x, y, sz) {
@@ -696,7 +700,13 @@ function selectElement(el) {
       html += `<div class="row"><span>種別</span><span>地先</span></div>`;
     }
   } else if (cat.kind === 'area') {
-    html += `<div class="row"><span>面積</span><b>${fmt(polyArea(el.points) * S.mPerPx * S.mPerPx, '㎡')}</b></div>`;
+    if (el.cat === 'stairs') {
+      const sm = stairsShortM(el);
+      html += `<div class="row"><span>短手</span><b>${S.mPerPx ? sm.toFixed(2) + ' m' : '—'}</b></div>`;
+      html += `<div class="row"><span>段数</span><b>${stairsStepCount(el)}段</b></div>`;
+    } else {
+      html += `<div class="row"><span>面積</span><b>${fmt(polyArea(el.points) * S.mPerPx * S.mPerPx, '㎡')}</b></div>`;
+    }
   } else html += `<div class="row"><span>スタンプ</span><span>1個</span></div>`;
   if (CONVERT[el.cat]) html += `<button class="del" style="background:#2563eb;display:block;width:100%;margin-top:8px" onclick="changeCat()">${CATS[CONVERT[el.cat]].label}に変更</button>`;
   html += `<button class="del" onclick="deleteSelected()">削除</button>`;
@@ -768,6 +778,28 @@ function polylineMidpoint(pts) {
   return centroid(pts);
 }
 function polyArea(pts) { let a = 0; for (let i = 0; i < pts.length; i++) { const j = (i + 1) % pts.length; a += pts[i].x * pts[j].y - pts[j].x * pts[i].y; } return Math.abs(a) / 2; }
+// 階段下地: 段数判定用。最小面積の傾き付き外接矩形の短辺(px)を返す(手描きのブレ・回転に強い)
+function minRectShortSide(pts) {
+  if (!pts || pts.length < 2) return 0;
+  let bestArea = Infinity, shortSide = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    let ux = b.x - a.x, uy = b.y - a.y; const L = Math.hypot(ux, uy); if (L < 1e-6) continue;
+    ux /= L; uy /= L; const vx = -uy, vy = ux;
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    for (const p of pts) {
+      const du = p.x * ux + p.y * uy, dv = p.x * vx + p.y * vy;
+      if (du < minU) minU = du; if (du > maxU) maxU = du;
+      if (dv < minV) minV = dv; if (dv > maxV) maxV = dv;
+    }
+    const w = maxU - minU, h = maxV - minV, area = w * h;
+    if (area < bestArea) { bestArea = area; shortSide = Math.min(w, h); }
+  }
+  return shortSide;
+}
+const STEP_DEPTH = 0.3;   // 階段1段あたりの短手(m)。短手÷0.3を四捨五入して段数(手描きのズレを吸収)
+function stairsShortM(el) { return S.mPerPx ? minRectShortSide(el.points) * S.mPerPx : 0; }
+function stairsStepCount(el) { const m = stairsShortM(el); return m > 0 ? Math.max(1, Math.round(m / STEP_DEPTH)) : 0; }
 function centroid(pts) { let x = 0, y = 0; pts.forEach(p => { x += p.x; y += p.y; }); return { x: x / pts.length, y: y / pts.length }; }
 function vnorm(v) { const l = Math.hypot(v.x, v.y) || 1; return { x: v.x / l, y: v.y / l }; }
 function signedArea(p) { let a = 0; for (let i = 0; i < p.length; i++) { const j = (i + 1) % p.length; a += p[i].x * p[j].y - p[j].x * p[i].y; } return a / 2; }
@@ -829,7 +861,8 @@ function aggregate() {
       const k = (el.dan != null && el.dan > 0) ? el.dan + '段' : '';   // 地先(0段)は段別内訳を作らない
       if (k) agg[el.cat].sub[k] = (agg[el.cat].sub[k] || 0) + len;
     } else if (cat.kind === 'area') {
-      agg[el.cat].qty += polyArea(el.points) * S.mPerPx * S.mPerPx;
+      if (el.cat === 'stairs') agg[el.cat].qty += stairsStepCount(el);   // 階段は面積でなく段数を集計
+      else agg[el.cat].qty += polyArea(el.points) * S.mPerPx * S.mPerPx;
     } else { agg[el.cat].qty += 1; }
   }
   return agg;
@@ -840,7 +873,7 @@ function renderLegend() {
   for (const key in CATS) {
     const c = CATS[key], a = agg[key];
     const row = document.createElement('div'); row.className = 'legrow';
-    const q = c.kind === 'stamp' ? a.qty : (S.mPerPx ? a.qty.toFixed(2) : '—');
+    const q = c.kind === 'stamp' ? a.qty : (S.mPerPx ? (key === 'stairs' ? Math.round(a.qty) : a.qty.toFixed(2)) : '—');
     row.innerHTML = `<span class="sw" style="background:${c.color}${c.kind==='area'?'66':''}"></span>`+
       `<span class="nm">${c.label}</span><span class="qt">${q}<small> ${c.unit}</small></span>`;
     box.appendChild(row);
