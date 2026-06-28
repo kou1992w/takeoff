@@ -133,6 +133,10 @@ function render() {
   });
   body.appendChild(gtr);
 
+  // 棟数列の左固定位置を、現場名列の実幅(内容に合わせた幅)に合わせる
+  const siteTh = document.querySelector('#costBody th.site');
+  if (siteTh) { const w = siteTh.offsetWidth; document.querySelectorAll('#costBody .bldg').forEach(el => { el.style.left = w + 'px'; }); }
+
   document.getElementById('grandTotal').textContent = yen(grand);
   document.getElementById('countInfo').textContent = `拾い済 ${drawn} / 全 ${ST.sites.length} 現場`;
   document.getElementById('emptyNote').textContent = drawn < ST.sites.length
@@ -156,10 +160,6 @@ function init() {
     const p = document.getElementById('setPanel'); p.style.display = p.style.display === 'none' ? 'block' : 'none';
   });
   document.getElementById('btnReload').addEventListener('click', load);
-  document.getElementById('btnToggleDetail').addEventListener('click', () => {
-    const hidden = document.getElementById('costTable').classList.toggle('hideDetail');
-    document.getElementById('btnToggleDetail').textContent = hidden ? '詳細列を表示' : '詳細列を隠す';
-  });
   document.getElementById('btnResetSet').addEventListener('click', () => { fillSettings(DEFAULTS); render(); });
   document.querySelectorAll('.setgrid input').forEach(i => i.addEventListener('input', () => { checkAlloc(); render(); }));
   document.getElementById('btnSaveSet').addEventListener('click', async () => {

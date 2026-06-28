@@ -32,8 +32,8 @@
   td.money, th.money { min-width: 92px; }
   .money { font-weight: 700; color: #0f172a; }
   /* 左固定2列: 現場 / 棟数 */
-  th.site, td.site { text-align: left; position: sticky; left: 0; width: 150px; min-width: 150px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; background: #fff; }
-  th.bldg, td.bldg { text-align: center; position: sticky; left: 150px; width: 48px; min-width: 48px; max-width: 48px; background: #fff; }
+  th.site, td.site { text-align: left; position: sticky; left: 0; white-space: nowrap; font-weight: 600; background: #fff; }
+  th.bldg, td.bldg { text-align: center; position: sticky; left: 160px; min-width: 48px; background: #fff; }
   th.site, th.bldg { z-index: 4; }   /* 角(上+左)は最前面 */
   td.site, td.bldg { z-index: 1; }
   tr:hover td { background: #f8fafc; }
@@ -41,14 +41,13 @@
   .grand td { border-top: 2px solid #0f172a; font-weight: 700; font-size: 13px; background: #fffbeb; }
   .grand td.site, .grand td.bldg { background: #fffbeb; }
   .pill { display: inline-block; padding: 1px 7px; border-radius: 999px; background: #fee2e2; color: #b91c1c; font-size: 11px; }
-  /* 詳細列の表示切替 */
-  table.hideDetail .detail { display: none; }
 </style>
 </head>
 <body>
 <!-- ナビメニュー -->
 <div id="navMenu" class="navmenu" onclick="this.classList.remove('open')">
   <div class="panel" onclick="event.stopPropagation()">
+    <button class="navclose" onclick="toggleNav()" title="閉じる">✕</button>
     <h3>メニュー</h3>
     <a href="/">🏗 外構図作成</a>
     <a href="/cost" class="active">💴 費用管理</a>
@@ -60,7 +59,6 @@
   <button class="hamb" onclick="toggleNav()" title="メニュー">☰</button>
   <span class="brand">💴 費用管理</span>
   <button class="btn" id="btnToggleSet">⚙ 設定</button>
-  <button class="btn" id="btnToggleDetail">詳細列を表示</button>
   <button class="btn" id="btnReload">再読込</button>
   <span class="grow"></span>
   <span class="info" id="countInfo"></span>
@@ -99,7 +97,7 @@
   </div>
 
   <div class="tablebox">
-    <table id="costTable" class="hideDetail"><tbody id="costBody"></tbody></table>
+    <table id="costTable"><tbody id="costBody"></tbody></table>
   </div>
   <div class="sub" id="emptyNote"></div>
 </div>
