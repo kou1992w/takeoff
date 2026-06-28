@@ -435,7 +435,7 @@ function buildNode(el) {
   const flat = el.points.flatMap(p => [p.x, p.y]);
   if (cat.kind === 'line') {
     const g = new Konva.Group();
-    g.add(new Konva.Line({ points: flat, stroke: cat.color, strokeWidth: lineW('line'), strokeScaleEnabled: true, lineCap: 'round', lineJoin: 'round', hitStrokeWidth: 16 }));
+    g.add(new Konva.Line({ points: flat, stroke: cat.color, strokeWidth: lineW('line'), strokeScaleEnabled: true, lineCap: 'butt', lineJoin: 'round', hitStrokeWidth: 16 }));
     // 段数/種別ラベル(白背景・ドラッグで移動可。位置はlabelPosに保存)
     const lp = el.labelPos || polylineMidpoint(el.points);
     const txt = el.cat === 'block_curb' ? '地先' : `${el.dan}段`;
@@ -862,7 +862,7 @@ function drawElemToCtx(ctx, el) {
     ctx.fillText(cat.mark, p.x, p.y); return;
   }
   if (cat.kind === 'line') {
-    pathCtx(ctx, el.points, false); ctx.strokeStyle = cat.color; ctx.lineWidth = lineW('line'); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+    pathCtx(ctx, el.points, false); ctx.strokeStyle = cat.color; ctx.lineWidth = lineW('line'); ctx.lineCap = 'butt'; ctx.lineJoin = 'round'; ctx.stroke();
     // 段数/種別ラベル
     const lp = el.labelPos || polylineMidpoint(el.points);
     const txt = el.cat === 'block_curb' ? '地先' : `${el.dan}段`;
