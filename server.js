@@ -56,9 +56,11 @@ function httpsPostForm(host, pathname, form) {
     r.on('error', reject); r.write(data); r.end();
   });
 }
+// OAuthのリダイレクト先: アクセスされたホスト名から組み立てる(複数ドメイン対応)。取れなければenvを使用。
+function redirectUri(req) { const host = req.headers.host; return host ? `https://${host}/auth/callback` : process.env.OAUTH_REDIRECT; }
 function authLogin(req, res) {
   const state = crypto.randomBytes(16).toString('hex');
-  const params = new url.URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: process.env.OAUTH_REDIRECT, response_type: 'code', scope: 'openid email profile', state, access_type: 'online', prompt: 'select_account' });
+  const params = new url.URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: redirectUri(req), response_type: 'code', scope: 'openid email profile', state, access_type: 'online', prompt: 'select_account' });
   res.writeHead(302, { 'Set-Cookie': cookie('oauth_state', state, 600), Location: 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString() });
   res.end();
 }
@@ -67,7 +69,7 @@ async function authCallback(req, res, u) {
     const { code, state } = u.query;
     if (!code || !state || state !== parseCookies(req).oauth_state) { res.writeHead(400); return res.end('bad state'); }
     const tok = JSON.parse(await httpsPostForm('oauth2.googleapis.com', '/token', {
-      code, client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET, redirect_uri: process.env.OAUTH_REDIRECT, grant_type: 'authorization_code',
+      code, client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET, redirect_uri: redirectUri(req), grant_type: 'authorization_code',
     }));
     if (!tok.id_token) throw new Error('no id_token');
     const payload = JSON.parse(Buffer.from(tok.id_token.split('.')[1], 'base64url').toString('utf8'));
