@@ -2,4 +2,5 @@
 .env
 saves/
 sites.json
+cost-settings.json
 node_modules/

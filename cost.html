@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>費用管理 — 係数制度</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body { margin: 0; background: #f1f5f9; color: #0f172a; font-family: system-ui, sans-serif; }
+  #chead { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #0f172a; color: #fff; position: sticky; top: 0; z-index: 5; }
+  #chead .brand { font-weight: 700; font-size: 16px; }
+  #chead .grow { flex: 1; }
+  #chead .info { color: #cbd5e1; font-size: 13px; }
+  #chead .total { font-size: 18px; font-weight: 700; color: #fde047; }
+  .wrap { padding: 16px; }
+  .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  .panel h2 { margin: 0 0 10px; font-size: 14px; color: #334155; }
+  .setgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 14px; }
+  .setgrid label { display: flex; flex-direction: column; font-size: 12px; color: #475569; gap: 3px; }
+  .setgrid input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+  .setfoot { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .warn { color: #dc2626; font-size: 12px; }
+  .ok { color: #16a34a; font-size: 12px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; font-size: 13px; }
+  .tablebox { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px; }
+  th, td { padding: 7px 9px; border-bottom: 1px solid #eef2f7; text-align: right; white-space: nowrap; }
+  th { background: #f8fafc; color: #475569; font-weight: 600; position: sticky; top: 0; }
+  td.site, th.site { text-align: left; position: sticky; left: 0; background: #fff; font-weight: 600; }
+  th.site { background: #f8fafc; z-index: 2; }
+  tr:hover td { background: #f8fafc; }
+  tr:hover td.site { background: #f1f5f9; }
+  .money { font-weight: 700; color: #0f172a; }
+  .grand td { border-top: 2px solid #0f172a; font-weight: 700; font-size: 14px; background: #fffbeb; }
+  .grand td.site { background: #fffbeb; }
+  .muted { color: #94a3b8; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 999px; background: #fee2e2; color: #b91c1c; font-size: 11px; }
+  .sub { color: #64748b; font-size: 11px; }
+  .toggle { cursor: pointer; }
+</style>
+</head>
+<body>
+<header id="chead">
+  <span class="brand">💴 費用管理</span>
+  <a class="btn" href="/">← 拾いツールへ</a>
+  <button class="btn toggle" id="btnToggleSet">⚙ 設定</button>
+  <button class="btn" id="btnReload">再読込</button>
+  <span class="grow"></span>
+  <span class="info" id="countInfo"></span>
+  <span class="info">総合計</span>
+  <span class="total" id="grandTotal">¥0</span>
+</header>
+
+<div class="wrap">
+  <div class="panel" id="setPanel" style="display:none">
+    <h2>係数制度の設定（変更すると即再計算されます。「設定を保存」で次回以降にも反映）</h2>
+    <div class="setgrid">
+      <label>固定費(円)<input type="number" id="s_fixed" step="1000"></label>
+      <label>係数対象金額(円)<input type="number" id="s_base" step="1000"></label>
+      <label>標準 アスファルト(㎡)<input type="number" id="s_std_asphalt" step="1"></label>
+      <label>標準 庭(㎡)<input type="number" id="s_std_garden" step="1"></label>
+      <label>標準 ブロック(pt)<input type="number" id="s_std_blockPt" step="0.5"></label>
+      <label>配分 アスファルト<input type="number" id="s_alloc_asphalt" step="0.05"></label>
+      <label>配分 ブロック<input type="number" id="s_alloc_block" step="0.05"></label>
+      <label>配分 庭<input type="number" id="s_alloc_garden" step="0.05"></label>
+      <label>ベース係数<input type="number" id="s_coefBase" step="0.1"></label>
+      <label>積み係数<input type="number" id="s_coefTsumi" step="0.1"></label>
+      <label>調整率 アスファルト<input type="number" id="s_adj_asphalt" step="0.1" min="0" max="1"></label>
+      <label>調整率 ブロック<input type="number" id="s_adj_block" step="0.1" min="0" max="1"></label>
+      <label>調整率 庭<input type="number" id="s_adj_garden" step="0.1" min="0" max="1"></label>
+    </div>
+    <div class="setfoot">
+      <button class="btn primary" id="btnSaveSet">設定を保存</button>
+      <button class="btn" id="btnResetSet">標準値に戻す</button>
+      <span id="allocCheck"></span>
+      <span id="setMsg" class="ok"></span>
+    </div>
+    <div class="sub" style="margin-top:8px">
+      ブロック種別ポイント = 地先:ベース×1.5 / n段:ベース＋積み×n。標準現場・棟数1で 1棟45万円。
+      砕石・階段下地・スタンプは係数に含みません（ポスト等は固定費でカバー）。
+    </div>
+  </div>
+
+  <div class="tablebox">
+    <table id="costTable"><tbody id="costBody"></tbody></table>
+  </div>
+  <div class="sub" id="emptyNote" style="margin-top:10px"></div>
+</div>
+
+<script src="cost.js"></script>
+</body>
+</html>

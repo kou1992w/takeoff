@@ -94,6 +94,28 @@ const RESCAN_MS = 12 * 60 * 60 * 1000;            // 12hごとに再スキャン
 try { fs.mkdirSync(SAVES); } catch { }
 function savePath(key) { return path.join(SAVES, crypto.createHash('sha1').update(String(key)).digest('hex') + '.json'); }
 
+// ===== 費用算出(係数制度)の設定 =====
+// 姉妹プロジェクト「費用算出」の仕様に準拠。標準現場・棟数1で 450,000円。
+const COST_CFG = path.join(__dirname, 'cost-settings.json');
+const DEFAULT_COST = {
+  fixed: 10000, base: 440000,                          // 固定費 / 係数対象金額
+  std: { asphalt: 60, garden: 25, blockPt: 25.5 },     // 標準値(1棟あたり)
+  alloc: { asphalt: 0.60, block: 0.25, garden: 0.15 }, // 最終係数への配分
+  coefBase: 1, coefTsumi: 1,                            // ベース係数 / 積み係数
+  adj: { asphalt: 1, block: 1, garden: 1 },            // 調整率(0〜1。1=単純比例)
+};
+function loadCostSettings() {
+  let s = {}; try { s = JSON.parse(fs.readFileSync(COST_CFG, 'utf8')); } catch { }
+  const D = DEFAULT_COST, num = (v, d) => (typeof v === 'number' && isFinite(v)) ? v : d;
+  return {
+    fixed: num(s.fixed, D.fixed), base: num(s.base, D.base),
+    std: { asphalt: num(s.std && s.std.asphalt, D.std.asphalt), garden: num(s.std && s.std.garden, D.std.garden), blockPt: num(s.std && s.std.blockPt, D.std.blockPt) },
+    alloc: { asphalt: num(s.alloc && s.alloc.asphalt, D.alloc.asphalt), block: num(s.alloc && s.alloc.block, D.alloc.block), garden: num(s.alloc && s.alloc.garden, D.alloc.garden) },
+    coefBase: num(s.coefBase, D.coefBase), coefTsumi: num(s.coefTsumi, D.coefTsumi),
+    adj: { asphalt: num(s.adj && s.adj.asphalt, D.adj.asphalt), block: num(s.adj && s.adj.block, D.adj.block), garden: num(s.adj && s.adj.garden, D.adj.garden) },
+  };
+}
+
 let sites = [];
 
 // ===== 配置図スキャン =====
@@ -115,30 +137,34 @@ function scan() {
     try {
       arr = JSON.parse(execFileSync('rclone', rcloneArgs(['lsjson', RCLONE_REMOTE, '-R', '--files-only']), { maxBuffer: 128 * 1024 * 1024 }).toString());
     } catch (e) { console.error('[scan] rclone lsjson 失敗:', e.message); }
+    const tos = {};                                          // 現場key -> 配置図を持つ棟フォルダの集合(棟数算出用)
     for (const it of arr) {
       const p = it.Path;                                     // 例: 鶴岡/日付_現場名/1号棟/(原図)配置図_*.pdf
       if (!/配置図.*\.pdf$/i.test(p) || /見取|求積/.test(p)) continue;
       const seg = p.split('/'); if (seg.length < 3) continue;
-      const file = seg[seg.length - 1], site = seg[seg.length - 3];
+      const file = seg[seg.length - 1], site = seg[seg.length - 3], to = seg[seg.length - 2];
       const region = seg.length >= 4 ? seg[seg.length - 4] : '';
       const key = seg.slice(0, seg.length - 2).join('/');     // 現場フォルダ(棟の1つ上)
+      (tos[key] = tos[key] || new Set()).add(to);             // 棟フォルダを数える
       const score = (/原図/.test(file) ? 2 : 0) + (/1号棟|１号棟/.test(file) ? 1 : 0);
       if (!groups[key] || score > groups[key].score) groups[key] = { region, site, score, key, path: p };
     }
     sites = Object.values(groups)
-      .map((g, i) => ({ id: String(i + 1), key: g.key, region: g.region, site: g.site, path: g.path }))
+      .map((g, i) => ({ id: String(i + 1), key: g.key, region: g.region, site: g.site, path: g.path, buildings: (tos[g.key] || new Set()).size || 1 }))
       .sort((a, b) => a.site.localeCompare(b.site, 'ja'));
   } else {
     // ローカルfs
     const hits = []; walk(BASE, hits);
+    const tos = {};
     for (const f of hits) {
       const siteDir = path.dirname(path.dirname(f));          // 棟の1つ上
       const region = path.basename(path.dirname(siteDir)), site = path.basename(siteDir);
+      (tos[siteDir] = tos[siteDir] || new Set()).add(path.basename(path.dirname(f)));
       const score = (/原図/.test(f) ? 2 : 0) + (/1号棟|１号棟/.test(f) ? 1 : 0);
       if (!groups[siteDir] || score > groups[siteDir].score) groups[siteDir] = { region, site, file: f, score, dir: siteDir };
     }
     sites = Object.values(groups)
-      .map((g, i) => ({ id: String(i + 1), key: g.dir, region: g.region, site: g.site, file: g.file }))
+      .map((g, i) => ({ id: String(i + 1), key: g.dir, region: g.region, site: g.site, file: g.file, buildings: (tos[g.dir] || new Set()).size || 1 }))
       .sort((a, b) => a.site.localeCompare(b.site, 'ja'));
   }
   fs.writeFileSync(CACHE, JSON.stringify({ scannedAt: new Date().toISOString(), sites }, null, 2));
@@ -189,10 +215,38 @@ const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', c => { body += c; if (body.length > 30e6) req.destroy(); });
     req.on('end', () => {
-      try { const j = JSON.parse(body); fs.writeFileSync(savePath(j.key), JSON.stringify(j.data)); res.writeHead(200); res.end('ok'); }
+      try {
+        const j = JSON.parse(body);
+        const rec = j.data || {};
+        if (j.quantities) rec.quantities = j.quantities;   // 費用算出用の数量サマリも保存
+        rec.savedAt = Date.now();
+        fs.writeFileSync(savePath(j.key), JSON.stringify(rec));
+        res.writeHead(200); res.end('ok');
+      }
       catch { res.writeHead(400); res.end('bad'); }
     });
     return;
+  }
+  // --- 費用管理 ---
+  if (u.pathname === '/cost' || u.pathname === '/cost.html') return serveFile(res, path.join(__dirname, 'cost.html'));
+  if (u.pathname === '/cost.js') return serveFile(res, path.join(__dirname, 'cost.js'));
+  if (u.pathname === '/api/costsettings') {
+    if (req.method === 'POST') {
+      let b = ''; req.on('data', c => { b += c; if (b.length > 1e6) req.destroy(); });
+      req.on('end', () => { try { fs.writeFileSync(COST_CFG, JSON.stringify(JSON.parse(b))); res.writeHead(200); res.end('ok'); } catch { res.writeHead(400); res.end('bad'); } });
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': MIME['.json'] });
+    return res.end(JSON.stringify(loadCostSettings()));
+  }
+  if (u.pathname === '/api/costsites') {
+    const out = sites.map(s => {
+      let quantities = null, savedAt = null;
+      try { const rec = JSON.parse(fs.readFileSync(savePath(s.key), 'utf8')); quantities = rec.quantities || null; savedAt = rec.savedAt || null; } catch { }
+      return { id: s.id, site: s.site, region: s.region, key: s.key, buildings: s.buildings || 1, quantities, savedAt };
+    });
+    res.writeHead(200, { 'Content-Type': MIME['.json'] });
+    return res.end(JSON.stringify({ sites: out, settings: loadCostSettings() }));
   }
   if (u.pathname === '/api/pdf') {
     const s = sites.find(x => x.id === u.query.id);
