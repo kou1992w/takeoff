@@ -545,8 +545,11 @@ function buildLegendNode(el) {
   const items = usedCats();
   const pad = Math.min(R.w, R.h) * 0.05;
   const innerX = pad, innerW = R.w - pad * 2;
-  const titleH = Math.min(R.h * 0.2, Math.max(R.h * 0.09, 10));
-  g.add(new Konva.Text({ text: '凡例', x: innerX, y: pad * 0.35, width: innerW, height: titleH, align: 'center', verticalAlign: 'middle', fontStyle: 'bold', fontFamily: 'sans-serif', fill: '#111', fontSize: titleH * 0.7 }));
+  // タイトル「凡例」: 縦長/横長で差が出ないよう、枠の幾何平均√(幅×高さ)を基準にサイズを決める
+  // (縦横を入れ替えても幾何平均は不変なので大きさが揃う。高さ・幅の上限で枠からはみ出さないよう調整)
+  const titleFz = Math.max(9, Math.min(Math.sqrt(R.w * R.h) * 0.11, R.h * 0.28, innerW / 2.4));
+  const titleH = titleFz * 1.35;
+  g.add(new Konva.Text({ text: '凡例', x: innerX, y: pad * 0.35, width: innerW, height: titleH, align: 'center', verticalAlign: 'middle', fontStyle: 'bold', fontFamily: 'sans-serif', fill: '#111', fontSize: titleFz }));
   if (!items.length) return g;
   const gridY = pad * 0.35 + titleH, gridH = R.h - gridY - pad * 0.5, n = items.length;
   // 各列数で「枠に収まる最大フォント」を算出
