@@ -452,7 +452,7 @@ function buildNode(el) {
   }
   if (cat.kind === 'stamp') {           // 枠線のみ。配置図の縮尺に追従(実寸サイズでズームと一緒に拡縮)
     const p = el.points[0]; const r = stampRadius(); const lw = Math.max(r * 0.2, 1.4); const g = new Konva.Group({ x: p.x, y: p.y });
-    g.add(new Konva.Circle({ radius: r, stroke: cat.color, strokeWidth: lw, fillEnabled: false }));
+    g.add(new Konva.Circle({ radius: r, stroke: cat.color, strokeWidth: lw, fill: '#ffffff' }));
     g.add(new Konva.Text({ text: cat.mark, fill: cat.color, fontStyle: 'bold', fontSize: r * 1.4, width: r * 2, height: r * 2, align: 'center', verticalAlign: 'middle', x: -r, y: -r }));
     return g;
   }
@@ -857,7 +857,7 @@ function drawElemToCtx(ctx, el) {
   const cat = CATS[el.cat];
   if (cat.kind === 'stamp') {           // 枠線のみ
     const p = el.points[0], r = stampRadius(), lw = Math.max(r * 0.2, 1.4);
-    ctx.strokeStyle = cat.color; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = cat.color; ctx.lineWidth = lw; ctx.stroke();
     ctx.fillStyle = cat.color; ctx.font = `bold ${(r * 1.4).toFixed(0)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(cat.mark, p.x, p.y); return;
   }
