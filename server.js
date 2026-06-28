@@ -265,4 +265,4 @@ const server = http.createServer((req, res) => {
 
 loadCacheOrScan();
 setInterval(scan, RESCAN_MS);
-server.listen(PORT, () => console.log(`外構積算 拾いツール: http://localhost:${PORT}  (現場 ${sites.length}件 / 認証 ${AUTH_ENABLED ? 'ON' : 'OFF'})`));
+server.listen(PORT, () => console.log(`外構図作成: http://localhost:${PORT}  (現場 ${sites.length}件 / 認証 ${AUTH_ENABLED ? 'ON' : 'OFF'})`));

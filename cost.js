@@ -63,57 +63,80 @@ function checkAlloc() {
 }
 
 // ===== 表の描画 =====
-const COLS = ['現場', '棟数', 'アス㎡', '庭㎡', '砕石㎡', '階段㎡', '地先m', '1段', '2段', '3段', '4段', '5段', 'Bpt', 'アス係数', 'ブロック係数', '庭係数', '最終係数', '1棟金額', '現場合計'];
+// 列定義: cls=site/bldg は左固定、detail=true は「詳細列」トグルで表示切替、f=値の取り出し
+const COLS = [
+  { h: '現場', cls: 'site' },
+  { h: '棟数', cls: 'bldg' },
+  { h: 'アス㎡', f: q => n2(q.asphalt) },
+  { h: '庭㎡', f: q => n2(q.garden) },
+  { h: '砕石㎡', f: q => n2(q.gravel), detail: true },
+  { h: '階段㎡', f: q => n2(q.stairs), detail: true },
+  { h: '地先m', f: q => n2(q.curb) },
+  { h: '1段', f: q => n2(q.dan1), detail: true },
+  { h: '2段', f: q => n2(q.dan2), detail: true },
+  { h: '3段', f: q => n2(q.dan3), detail: true },
+  { h: '4段', f: q => n2(q.dan4), detail: true },
+  { h: '5段', f: q => n2(q.dan5), detail: true },
+  { h: 'Bpt', f: (q, r) => n2(r.blockPtTotal) },
+  { h: 'アス係数', f: (q, r) => n3(r.cA), detail: true },
+  { h: 'ﾌﾞﾛｯｸ係数', f: (q, r) => n3(r.cB), detail: true },
+  { h: '庭係数', f: (q, r) => n3(r.cG), detail: true },
+  { h: '最終係数', f: (q, r) => n3(r.finalCoef) },
+  { h: '1棟金額', f: (q, r) => yen(r.perBuilding), cls: 'money' },
+  { h: '現場合計', f: (q, r) => yen(r.total), cls: 'money' },
+];
+function newCell(col, tag) {
+  const el = document.createElement(tag || 'td');
+  if (col.cls) el.className = col.cls;
+  if (col.detail) el.classList.add('detail');
+  return el;
+}
 function render() {
   const st = readSettings();
   const body = document.getElementById('costBody');
   body.innerHTML = '';
   // ヘッダ
   const thead = document.createElement('tr');
-  COLS.forEach((c, i) => { const th = document.createElement('th'); th.textContent = c; if (i === 0) th.className = 'site'; thead.appendChild(th); });
+  COLS.forEach(col => { const th = newCell(col, 'th'); th.textContent = col.h; thead.appendChild(th); });
   body.appendChild(thead);
 
   let grand = 0, drawn = 0;
   ST.sites.forEach(s => {
     const q = s.quantities;
     const tr = document.createElement('tr');
-    const cells = [];
-    cells.push({ t: s.site, cls: 'site' });
-    cells.push({ t: s.buildings });
     if (q && q.hasScale) {
       drawn++;
-      const r = computeCost(q, s.buildings, st);
-      grand += r.total;
-      cells.push({ t: n2(q.asphalt) }, { t: n2(q.garden) }, { t: n2(q.gravel) }, { t: n2(q.stairs) },
-        { t: n2(q.curb) }, { t: n2(q.dan1) }, { t: n2(q.dan2) }, { t: n2(q.dan3) }, { t: n2(q.dan4) }, { t: n2(q.dan5) },
-        { t: n2(r.blockPtTotal) }, { t: n3(r.cA) }, { t: n3(r.cB) }, { t: n3(r.cG) }, { t: n3(r.finalCoef) },
-        { t: yen(r.perBuilding) }, { t: yen(r.total), cls: 'money' });
+      const r = computeCost(q, s.buildings, st); grand += r.total;
+      COLS.forEach(col => {
+        const td = newCell(col);
+        if (col.cls === 'site') { td.textContent = s.site; td.title = s.site; }
+        else if (col.cls === 'bldg') td.textContent = s.buildings;
+        else td.textContent = col.f(q, r);
+        tr.appendChild(td);
+      });
     } else {
       const note = !q ? '未拾い' : '縮尺未設定';
-      cells.push({ t: note, cls: 'pillcell', span: COLS.length - 2 });
+      const tdS = newCell(COLS[0]); tdS.textContent = s.site; tdS.title = s.site; tr.appendChild(tdS);
+      const tdB = newCell(COLS[1]); tdB.textContent = s.buildings; tr.appendChild(tdB);
+      const tdN = document.createElement('td'); tdN.colSpan = COLS.length - 2; tdN.style.textAlign = 'left'; tdN.innerHTML = `<span class="pill">${note}</span>`; tr.appendChild(tdN);
     }
-    cells.forEach(c => {
-      const td = document.createElement('td');
-      if (c.cls === 'site') td.className = 'site';
-      else if (c.cls === 'money') td.className = 'money';
-      if (c.cls === 'pillcell') { td.colSpan = c.span; td.innerHTML = `<span class="pill">${c.t}</span>`; td.style.textAlign = 'left'; }
-      else td.textContent = c.t;
-      tr.appendChild(td);
-    });
     body.appendChild(tr);
   });
 
   // 総合計行
   const gtr = document.createElement('tr'); gtr.className = 'grand';
-  const tdL = document.createElement('td'); tdL.className = 'site'; tdL.textContent = '総合計'; gtr.appendChild(tdL);
-  for (let i = 1; i < COLS.length - 1; i++) gtr.appendChild(document.createElement('td'));
-  const tdT = document.createElement('td'); tdT.className = 'money'; tdT.textContent = yen(grand); gtr.appendChild(tdT);
+  COLS.forEach(col => {
+    const td = newCell(col);
+    if (col.cls === 'site') td.textContent = '総合計';
+    else if (col.h === '現場合計') td.textContent = yen(grand);
+    gtr.appendChild(td);
+  });
   body.appendChild(gtr);
 
   document.getElementById('grandTotal').textContent = yen(grand);
   document.getElementById('countInfo').textContent = `拾い済 ${drawn} / 全 ${ST.sites.length} 現場`;
   document.getElementById('emptyNote').textContent = drawn < ST.sites.length
-    ? '「未拾い」＝まだ作図保存がない現場。「縮尺未設定」＝拾いツールで縮尺(1/100・1/150)を選んで保存し直すと金額が出ます。' : '';
+    ? '「未拾い」＝まだ作図保存がない現場。「縮尺未設定」＝外構図作成で縮尺(1/100・1/150)を選んで保存し直すと金額が出ます。' : '';
 }
 
 // ===== 読み込み =====
@@ -133,6 +156,10 @@ function init() {
     const p = document.getElementById('setPanel'); p.style.display = p.style.display === 'none' ? 'block' : 'none';
   });
   document.getElementById('btnReload').addEventListener('click', load);
+  document.getElementById('btnToggleDetail').addEventListener('click', () => {
+    const hidden = document.getElementById('costTable').classList.toggle('hideDetail');
+    document.getElementById('btnToggleDetail').textContent = hidden ? '詳細列を表示' : '詳細列を隠す';
+  });
   document.getElementById('btnResetSet').addEventListener('click', () => { fillSettings(DEFAULTS); render(); });
   document.querySelectorAll('.setgrid input').forEach(i => i.addEventListener('input', () => { checkAlloc(); render(); }));
   document.getElementById('btnSaveSet').addEventListener('click', async () => {
