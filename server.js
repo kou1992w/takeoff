@@ -108,9 +108,19 @@ const RCLONE_CONF = process.env.RCLONE_CONF || '';     // rclone.conf のパス(
 function rcloneArgs(extra) { const a = extra.slice(); if (RCLONE_CONF) a.push('--config', RCLONE_CONF); return a; }
 const CACHE = path.join(__dirname, 'sites.json'); // 現場一覧キャッシュ
 const SAVES = path.join(__dirname, 'saves');      // 現場ごとの作図データ保存先
-const RESCAN_MS = 12 * 60 * 60 * 1000;            // 12hごとに再スキャン
+const RESCAN_MS = 24 * 60 * 60 * 1000;            // 起動時の再スキャン判定(24h)。定期実行は毎日JST0時(下部)
 try { fs.mkdirSync(SAVES); } catch { }
 function savePath(key) { return path.join(SAVES, crypto.createHash('sha1').update(String(key)).digest('hex') + '.json'); }
+
+// ===== PDFキャッシュ(VMディスク) =====
+// 配置図PDFをDriveから取り出す代わりにディスクから返して高速化。md5(scanで取得)で変更検知。
+const PDFCACHE = path.join(__dirname, 'pdfcache');
+try { fs.mkdirSync(PDFCACHE); } catch { }
+const PDF_MANIFEST = path.join(PDFCACHE, 'manifest.json');
+let pdfManifest = {};                              // pid -> キャッシュ済みファイルのmd5
+try { pdfManifest = JSON.parse(fs.readFileSync(PDF_MANIFEST, 'utf8')); } catch { }
+function savePdfManifest() { try { fs.writeFileSync(PDF_MANIFEST, JSON.stringify(pdfManifest)); } catch { } }
+function pdfCachePath(pid) { return path.join(PDFCACHE, pid + '.pdf'); }
 
 // ===== 費用算出(係数制度)の設定 =====
 // 姉妹プロジェクト「費用算出」の仕様に準拠。標準現場・棟数1で 450,000円。
@@ -183,7 +193,7 @@ function buildPlans(raw, siteKey, srcField) {
   return uniq.map((pl, j) => {
     const src = pl[srcField];
     const pid = crypto.createHash('sha1').update(String(src)).digest('hex').slice(0, 12);
-    const plan = { pid, label: pl.to || pl.file, savekey: j === 0 ? siteKey : siteKey + '#' + pid };
+    const plan = { pid, label: pl.to || pl.file, savekey: j === 0 ? siteKey : siteKey + '#' + pid, md5: pl.md5 || '' };
     plan[srcField] = src;   // path(クラウド) または file(ローカル)
     return plan;
   });
@@ -358,10 +368,19 @@ const server = http.createServer((req, res) => {
     let target = null;                       // pidで配置図(plan)を特定
     for (const s of sites) { for (const p of (s.plans || [])) if (p.pid === u.query.pid) { target = p; break; } if (target) break; }
     if (!target) { res.writeHead(404); return res.end('no plan'); }
-    if (RCLONE_REMOTE && target.path) {      // クラウド: rcloneでPDFを取り出してストリーム
+    if (RCLONE_REMOTE && target.path) {      // クラウド: キャッシュ優先、変更(md5不一致)時のみrcloneで取り直す
+      const cf = pdfCachePath(target.pid), md5 = target.md5 || '';
+      if (md5 && pdfManifest[target.pid] === md5 && fs.existsSync(cf)) {   // キャッシュヒット=即返す
+        res.writeHead(200, { 'Content-Type': MIME['.pdf'] });
+        return fs.createReadStream(cf).pipe(res);
+      }
+      // キャッシュミス/変更あり: ストリームしながら集めてキャッシュに保存(イベントループは塞がない)
       res.writeHead(200, { 'Content-Type': MIME['.pdf'] });
       const ps = spawn('rclone', rcloneArgs(['cat', RCLONE_REMOTE + target.path]));
+      const chunks = [];
+      ps.stdout.on('data', c => chunks.push(c));
       ps.stdout.pipe(res);
+      ps.on('close', code => { if (code === 0) { try { fs.writeFileSync(cf, Buffer.concat(chunks)); pdfManifest[target.pid] = md5; savePdfManifest(); } catch { } } });
       ps.on('error', () => { try { res.destroy(); } catch { } });
       return;
     }
@@ -370,6 +389,34 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end('not found');
 });
 
+// 毎日 JST 0:00 に再スキャン(JST=UTC+9 なので UTC 15:00)。実行後に孤立PDFキャッシュを掃除。
+function msUntilNextJstMidnight() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setUTCHours(15, 0, 0, 0);           // UTC15:00 = JST翌0:00
+  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  return next - now;
+}
+function cleanPdfCache() {                  // 現存しない配置図(削除された現場等)のキャッシュを削除
+  try {
+    const valid = new Set();
+    for (const s of sites) for (const p of (s.plans || [])) valid.add(p.pid + '.pdf');
+    for (const f of fs.readdirSync(PDFCACHE)) {
+      if (f === 'manifest.json' || valid.has(f)) continue;
+      try { fs.unlinkSync(path.join(PDFCACHE, f)); } catch { }
+      delete pdfManifest[f.replace(/\.pdf$/, '')];
+    }
+    savePdfManifest();
+  } catch { }
+}
+function scheduleDailyScan() {
+  setTimeout(() => {
+    try { scan(); cleanPdfCache(); console.log('[daily] 再スキャン完了 (' + new Date().toLocaleString('ja-JP') + ')'); }
+    catch (e) { console.error('[daily] 失敗', e.message); }
+    scheduleDailyScan();                   // 次のJST0時を再計算(ドリフト防止)
+  }, msUntilNextJstMidnight());
+}
+
 loadCacheOrScan();
-setInterval(scan, RESCAN_MS);
+scheduleDailyScan();
 server.listen(PORT, () => console.log(`外構図作成: http://localhost:${PORT}  (現場 ${sites.length}件 / 認証 ${AUTH_ENABLED ? 'ON' : 'OFF'})`));

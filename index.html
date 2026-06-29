@@ -53,8 +53,11 @@ fetch('/api/me').then(r=>r.json()).then(j=>{ if(j.owner) document.getElementById
     <select id="planSwitch" class="planswitch" style="display:none" title="同じ現場の配置図を切り替え"></select>
     <span class="sep"></span>
     <span class="info">縮尺</span>
-    <button class="btn scaleBtn" data-denom="100">1/100</button>
-    <button class="btn scaleBtn" data-denom="150">1/150</button>
+    <select id="scaleSelect" class="planswitch" title="縮尺(配置図のスケール)">
+      <option value="">未設定</option>
+      <option value="100">1/100</option>
+      <option value="150">1/150</option>
+    </select>
     <span id="scaleInfo" class="info">未設定</span>
     <span class="sep"></span>
     <button class="btn" id="btnUndo" title="Ctrl+Z">元に戻す</button>

@@ -4,4 +4,5 @@ saves/
 sites.json
 cost-settings.json
 allowlist.json
+pdfcache/
 node_modules/

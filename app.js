@@ -80,7 +80,11 @@ function setTool(t) {
 function setupUI() {
   document.querySelectorAll('.tool').forEach(b =>
     b.addEventListener('click', () => setTool(b.dataset.tool)));
-  document.querySelectorAll('.scaleBtn').forEach(b => b.addEventListener('click', () => setScale(parseInt(b.dataset.denom, 10))));
+  document.getElementById('scaleSelect').addEventListener('change', e => {
+    const v = parseInt(e.target.value, 10);
+    if (v) setScale(v);
+    else { S.mPerPx = null; S.scaleDenom = null; updateScaleInfo('未設定'); markScaleButtons(); restyleStrokes(); recalc(); }
+  });
   document.getElementById('btnUndo').addEventListener('click', undo);
   document.getElementById('btnRedo').addEventListener('click', redo);
   document.getElementById('btnClear').addEventListener('click', clearAllDrawings);
@@ -814,8 +818,9 @@ function setScale(denom) {
   updateScaleInfo('1/' + denom); markScaleButtons();
   restyleStrokes(); recalc();
 }
-function markScaleButtons() {
-  document.querySelectorAll('.scaleBtn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.denom, 10) === S.scaleDenom));
+function markScaleButtons() {   // 縮尺ドロップダウンに現在値を反映(関数名は従来の呼び出し元に合わせて維持)
+  const sel = document.getElementById('scaleSelect');
+  if (sel) sel.value = S.scaleDenom ? String(S.scaleDenom) : '';
 }
 function clearCalib() { S.calib = null; S.previewLayer.destroyChildren(); S.previewLayer.batchDraw(); }
 function onCalibClick(p) {
