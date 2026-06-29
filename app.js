@@ -160,14 +160,23 @@ function filterSites() {
   renderSites(q ? ALL_SITES.filter(s => (s.site + s.region).includes(q)) : ALL_SITES);
 }
 async function rescanSites() { document.getElementById('siteList').textContent = 'スキャン中…'; await fetch('/api/rescan'); loadSites(); }
+function showLoading(t) { const el = document.getElementById('loadingTip'); if (el) { el.querySelector('.ltext').textContent = t || '外構図を読み込み中…'; el.style.display = 'flex'; } }
+function hideLoading() { const el = document.getElementById('loadingTip'); if (el) el.style.display = 'none'; }
 async function openPlan(s, p) {
   if (!p) return;
   S.siteKey = p.savekey || s.key;                 // 保存キーは配置図ごと(primaryは現場キーで既存保存と互換)
   document.getElementById('siteName').textContent = s.site + (p.label ? ' — ' + p.label : '');
-  const buf = await (await fetch('/api/pdf?pid=' + encodeURIComponent(p.pid))).arrayBuffer();
-  hidePicker();
-  await loadPdfBuffer(buf);
-  await loadSaved();
+  showLoading(s.site + (p.label ? ' — ' + p.label : '') + ' を読み込み中…');   // クリック直後に即表示(PDF取得に数秒かかるため)
+  try {
+    const buf = await (await fetch('/api/pdf?pid=' + encodeURIComponent(p.pid))).arrayBuffer();
+    hidePicker();
+    await loadPdfBuffer(buf);
+    await loadSaved();
+  } catch (e) {
+    alert('配置図の読み込みに失敗しました。通信状況を確認して、もう一度お試しください。');
+  } finally {
+    hideLoading();
+  }
 }
 
 // ===== 保存 / 読み込み(現場ごと) =====

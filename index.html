@@ -40,6 +40,9 @@ fetch('/api/me').then(r=>r.json()).then(j=>{ if(j.owner) document.getElementById
   </div>
 </div>
 
+<!-- 読み込み中の表示(右下) -->
+<div id="loadingTip" class="loadingtip" style="display:none"><span class="spin"></span><span class="ltext">外構図を読み込み中…</span></div>
+
 <div id="app" style="display:none">
   <!-- 上部ツールバー -->
   <header id="topbar">
