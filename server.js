@@ -248,8 +248,10 @@ const server = http.createServer((req, res) => {
   if (u.pathname === '/app.js') return serveFile(res, path.join(__dirname, 'app.js'));
   if (u.pathname === '/style.css') return serveFile(res, path.join(__dirname, 'style.css'));
   if (u.pathname === '/api/sites') {
-    // クライアントには path/file は渡さない(pid/savekey/labelのみ)
-    const out = sites.map(s => ({ id: s.id, key: s.key, region: s.region, site: s.site, buildings: s.buildings, plans: (s.plans || []).map(p => ({ pid: p.pid, label: p.label, savekey: p.savekey })) }));
+    // 配置図ごとの作成済判定: 保存があり描画要素が1つ以上
+    const done = sk => { try { const r = JSON.parse(fs.readFileSync(savePath(sk), 'utf8')); return Array.isArray(r.elements) && r.elements.length > 0; } catch { return false; } };
+    // クライアントには path/file は渡さない(pid/savekey/label/doneのみ)
+    const out = sites.map(s => ({ id: s.id, key: s.key, region: s.region, site: s.site, buildings: s.buildings, plans: (s.plans || []).map(p => ({ pid: p.pid, label: p.label, savekey: p.savekey, done: done(p.savekey) })) }));
     res.writeHead(200, { 'Content-Type': MIME['.json'] });
     return res.end(JSON.stringify({ sites: out }));
   }

@@ -113,10 +113,22 @@ function renderSites(list) {
   box.innerHTML = '';
   list.forEach(s => {
     const plans = s.plans || [];
+    const doneCount = plans.filter(p => p.done).length;
     const d = document.createElement('div'); d.className = 'siteitem';
     const nm = document.createElement('span'); nm.textContent = s.site; d.appendChild(nm);
     const reg = document.createElement('span'); reg.className = 'reg';
-    reg.textContent = s.region + (plans.length > 1 ? '  ' : '');
+    // 外構図 作成済/未 バッジ
+    const badge = document.createElement('span');
+    if (plans.length > 1) {
+      badge.className = 'donebadge ' + (doneCount === plans.length ? 'done' : doneCount ? 'partial' : 'undone');
+      badge.textContent = `${doneCount}/${plans.length}作成`;
+    } else {
+      const dn = plans[0] && plans[0].done;
+      badge.className = 'donebadge ' + (dn ? 'done' : 'undone');
+      badge.textContent = dn ? '✓作成済' : '未作成';
+    }
+    reg.appendChild(badge);
+    reg.appendChild(document.createTextNode(s.region + (plans.length > 1 ? '  ' : '')));
     if (plans.length > 1) {                       // 他号棟の配置図を選ぶトグル(行クリックはprimaryを開く)
       const exp = document.createElement('span'); exp.className = 'planexp'; exp.textContent = `配置図${plans.length}枚 ▾`;
       exp.title = '別の号棟の配置図を選ぶ';
@@ -136,7 +148,8 @@ function togglePlans(s, rowEl) {
   const pl = document.createElement('div'); pl.className = 'planlist';
   (s.plans || []).forEach(p => {
     const b = document.createElement('div'); b.className = 'planitem';
-    b.textContent = '▸ ' + p.label;
+    const t = document.createElement('span'); t.textContent = '▸ ' + p.label; b.appendChild(t);
+    const st = document.createElement('span'); st.className = p.done ? 'pdone' : 'pundone'; st.textContent = p.done ? '✓作成済' : '未作成'; b.appendChild(st);
     b.onclick = (e) => { e.stopPropagation(); openPlan(s, p); };
     pl.appendChild(b);
   });
