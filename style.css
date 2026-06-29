@@ -12,6 +12,8 @@ html, body { margin: 0; height: 100%; font-family: "Segoe UI", "Meiryo", sans-se
 .btn.primary { background: #2563eb; border-color: #2563eb; }
 .btn.primary:hover { background: #1d4ed8; }
 .btn.scaleBtn.active { background: #2563eb; border-color: #2563eb; }
+.planswitch { background: #374151; color: #fff; border: 1px solid #4b5563; border-radius: 6px; padding: 5px 8px; font-size: 12px; cursor: pointer; max-width: 200px; }
+.planswitch:hover { border-color: #2563eb; }
 .btn:disabled { opacity: .4; cursor: default; }
 
 /* メイン3カラム */

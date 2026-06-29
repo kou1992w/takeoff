@@ -88,6 +88,7 @@ function setupUI() {
   document.getElementById('btnExport').addEventListener('click', exportPDF);
   document.getElementById('btnSave').addEventListener('click', () => saveState(true));
   document.getElementById('btnBack').addEventListener('click', showPicker);
+  document.getElementById('planSwitch').addEventListener('change', switchPlan);
   // 現場選択画面
   document.getElementById('siteSearch').addEventListener('input', filterSites);
   document.getElementById('btnRescan').addEventListener('click', rescanSites);
@@ -164,6 +165,7 @@ function showLoading(t) { const el = document.getElementById('loadingTip'); if (
 function hideLoading() { const el = document.getElementById('loadingTip'); if (el) el.style.display = 'none'; }
 async function openPlan(s, p) {
   if (!p) return;
+  S.currentSite = s;                              // 現在の現場(plans含む)を保持=作成画面から配置図を切替できる
   S.siteKey = p.savekey || s.key;                 // 保存キーは配置図ごと(primaryは現場キーで既存保存と互換)
   document.getElementById('siteName').textContent = s.site + (p.label ? ' — ' + p.label : '');
   showLoading(s.site + (p.label ? ' — ' + p.label : '') + ' を読み込み中…');   // クリック直後に即表示(PDF取得に数秒かかるため)
@@ -172,11 +174,31 @@ async function openPlan(s, p) {
     hidePicker();
     await loadPdfBuffer(buf);
     await loadSaved();
+    updatePlanSwitcher();                         // 同じ現場の配置図切替セレクトを更新
   } catch (e) {
     alert('配置図の読み込みに失敗しました。通信状況を確認して、もう一度お試しください。');
   } finally {
     hideLoading();
   }
+}
+// 同じ現場の配置図を切り替えるセレクト。現場が複数配置図のときだけ表示。
+function updatePlanSwitcher() {
+  const sel = document.getElementById('planSwitch'); if (!sel) return;
+  const plans = (S.currentSite && S.currentSite.plans) || [];
+  if (plans.length <= 1) { sel.style.display = 'none'; sel.innerHTML = ''; return; }
+  sel.innerHTML = '';
+  plans.forEach(p => { const o = document.createElement('option'); o.value = p.pid; o.textContent = '配置図: ' + p.label; sel.appendChild(o); });
+  const cur = plans.find(p => p.savekey === S.siteKey);
+  if (cur) sel.value = cur.pid;
+  sel.style.display = '';
+}
+async function switchPlan() {
+  const sel = document.getElementById('planSwitch');
+  const s = S.currentSite; if (!s) return;
+  const p = (s.plans || []).find(x => x.pid === sel.value);
+  if (!p || p.savekey === S.siteKey) return;
+  clearTimeout(_saveTimer); await saveState(true);  // 現在の作図を保存してから切替(消えないように)
+  await openPlan(s, p);
 }
 
 // ===== 保存 / 読み込み(現場ごと) =====
@@ -258,6 +280,7 @@ document.addEventListener('keyup', e => { if (e.key === 'Shift') S._shift = fals
 async function onPdfChosen(e) {
   const file = e.target.files[0]; if (!file) return;
   S.siteKey = null;                       // 手動PDFは保存対象外
+  S.currentSite = null; updatePlanSwitcher();   // 配置図切替は非表示
   const buf = await file.arrayBuffer();
   document.getElementById('siteName').textContent = file.name;
   hidePicker();
