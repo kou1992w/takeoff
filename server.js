@@ -158,15 +158,28 @@ function walk(dir, hits) {
     else if (e.isFile() && /配置図.*\.pdf$/i.test(e.name) && !/見取|求積/.test(e.name)) hits.push(p);
   }
 }
+// 現場内の配置図一覧(plans)を作る。スコア順に並べ、md5一致の重複だけ除去。
+// 先頭(primary=最良スコア)の保存キーは現場キーのまま(既存の保存と互換)。他はキー#pid。
+function buildPlans(raw, siteKey, srcField) {
+  raw.sort((a, b) => b.score - a.score || String(a.to).localeCompare(String(b.to), 'ja'));
+  const seen = new Set(), uniq = [];
+  for (const pl of raw) { if (pl.md5 && seen.has(pl.md5)) continue; if (pl.md5) seen.add(pl.md5); uniq.push(pl); }
+  return uniq.map((pl, j) => {
+    const src = pl[srcField];
+    const pid = crypto.createHash('sha1').update(String(src)).digest('hex').slice(0, 12);
+    const plan = { pid, label: pl.to || pl.file, savekey: j === 0 ? siteKey : siteKey + '#' + pid };
+    plan[srcField] = src;   // path(クラウド) または file(ローカル)
+    return plan;
+  });
+}
 function scan() {
-  const groups = {};
   if (RCLONE_REMOTE) {
     // クラウド(rclone): リモート配下の全ファイルを取得してグループ化
     let arr = [];
     try {
-      arr = JSON.parse(execFileSync('rclone', rcloneArgs(['lsjson', RCLONE_REMOTE, '-R', '--files-only']), { maxBuffer: 128 * 1024 * 1024 }).toString());
+      arr = JSON.parse(execFileSync('rclone', rcloneArgs(['lsjson', RCLONE_REMOTE, '-R', '--files-only', '--hash']), { maxBuffer: 128 * 1024 * 1024 }).toString());
     } catch (e) { console.error('[scan] rclone lsjson 失敗:', e.message); }
-    const tos = {};                                          // 現場key -> 配置図を持つ棟フォルダの集合(棟数算出用)
+    const bySite = {}, tos = {};
     for (const it of arr) {
       const p = it.Path;                                     // 例: 鶴岡/日付_現場名/1号棟/(原図)配置図_*.pdf
       if (!/配置図.*\.pdf$/i.test(p) || /見取|求積/.test(p)) continue;
@@ -175,35 +188,38 @@ function scan() {
       const region = seg.length >= 4 ? seg[seg.length - 4] : '';
       const key = seg.slice(0, seg.length - 2).join('/');     // 現場フォルダ(棟の1つ上)
       (tos[key] = tos[key] || new Set()).add(to);             // 棟フォルダを数える
+      const md5 = (it.Hashes && (it.Hashes.md5 || it.Hashes.MD5)) || '';
       const score = (/原図/.test(file) ? 2 : 0) + (/1号棟|１号棟/.test(file) ? 1 : 0);
-      if (!groups[key] || score > groups[key].score) groups[key] = { region, site, score, key, path: p };
+      (bySite[key] = bySite[key] || { region, site, key, raw: [] }).raw.push({ to, file, path: p, md5, score });
     }
-    sites = Object.values(groups)
-      .map((g, i) => ({ id: String(i + 1), key: g.key, region: g.region, site: g.site, path: g.path, buildings: (tos[g.key] || new Set()).size || 1 }))
+    sites = Object.values(bySite)
+      .map((g, i) => ({ id: String(i + 1), key: g.key, region: g.region, site: g.site, buildings: (tos[g.key] || new Set()).size || 1, plans: buildPlans(g.raw, g.key, 'path') }))
       .sort((a, b) => a.site.localeCompare(b.site, 'ja'));
   } else {
     // ローカルfs
     const hits = []; walk(BASE, hits);
-    const tos = {};
+    const bySite = {}, tos = {};
     for (const f of hits) {
       const siteDir = path.dirname(path.dirname(f));          // 棟の1つ上
       const region = path.basename(path.dirname(siteDir)), site = path.basename(siteDir);
-      (tos[siteDir] = tos[siteDir] || new Set()).add(path.basename(path.dirname(f)));
+      const to = path.basename(path.dirname(f));
+      (tos[siteDir] = tos[siteDir] || new Set()).add(to);
       const score = (/原図/.test(f) ? 2 : 0) + (/1号棟|１号棟/.test(f) ? 1 : 0);
-      if (!groups[siteDir] || score > groups[siteDir].score) groups[siteDir] = { region, site, file: f, score, dir: siteDir };
+      (bySite[siteDir] = bySite[siteDir] || { region, site, key: siteDir, raw: [] }).raw.push({ to, file: f, score });
     }
-    sites = Object.values(groups)
-      .map((g, i) => ({ id: String(i + 1), key: g.dir, region: g.region, site: g.site, file: g.file, buildings: (tos[g.dir] || new Set()).size || 1 }))
+    sites = Object.values(bySite)
+      .map((g, i) => ({ id: String(i + 1), key: g.key, region: g.region, site: g.site, buildings: (tos[g.key] || new Set()).size || 1, plans: buildPlans(g.raw, g.key, 'file') }))
       .sort((a, b) => a.site.localeCompare(b.site, 'ja'));
   }
-  fs.writeFileSync(CACHE, JSON.stringify({ scannedAt: new Date().toISOString(), sites }, null, 2));
+  fs.writeFileSync(CACHE, JSON.stringify({ scannedAt: new Date().toISOString(), v: 2, sites }, null, 2));
   console.log(`[scan] ${sites.length} 現場 (${new Date().toLocaleString('ja-JP')})`);
 }
 function loadCacheOrScan() {
   try {
     const c = JSON.parse(fs.readFileSync(CACHE, 'utf8'));
     sites = c.sites || [];
-    if (Date.now() - new Date(c.scannedAt).getTime() > RESCAN_MS) scan();
+    // 旧形式キャッシュ(plans無し)や期限切れは再スキャン
+    if (!sites.length || !sites[0].plans || Date.now() - new Date(c.scannedAt).getTime() > RESCAN_MS) scan();
   } catch { scan(); }
 }
 
@@ -232,8 +248,10 @@ const server = http.createServer((req, res) => {
   if (u.pathname === '/app.js') return serveFile(res, path.join(__dirname, 'app.js'));
   if (u.pathname === '/style.css') return serveFile(res, path.join(__dirname, 'style.css'));
   if (u.pathname === '/api/sites') {
+    // クライアントには path/file は渡さない(pid/savekey/labelのみ)
+    const out = sites.map(s => ({ id: s.id, key: s.key, region: s.region, site: s.site, buildings: s.buildings, plans: (s.plans || []).map(p => ({ pid: p.pid, label: p.label, savekey: p.savekey })) }));
     res.writeHead(200, { 'Content-Type': MIME['.json'] });
-    return res.end(JSON.stringify({ sites }));
+    return res.end(JSON.stringify({ sites: out }));
   }
   if (u.pathname === '/api/rescan') { scan(); res.writeHead(200); return res.end('ok'); }
   if (u.pathname === '/api/load') {
@@ -269,29 +287,42 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify(loadCostSettings()));
   }
   if (u.pathname === '/api/costsites') {
+    // 現場ごとに、その現場の全配置図(plans)の数量を合計して1現場ぶんにする
     const out = sites.map(s => {
-      let quantities = null, savedAt = null;
-      try {
-        const rec = JSON.parse(fs.readFileSync(savePath(s.key), 'utf8'));
-        quantities = rec.quantities || null; savedAt = rec.savedAt || null;
-        if (quantities) { const st = recomputeStairsSteps(rec); if (st != null) quantities = Object.assign({}, quantities, { stairs: st }); } // 階段は図形から段数を再計算(古い保存も補正)
-      } catch { }
-      return { id: s.id, site: s.site, region: s.region, key: s.key, buildings: s.buildings || 1, quantities, savedAt };
+      const q = { hasScale: false, asphalt: 0, garden: 0, gravel: 0, stairs: 0, curb: 0, dan1: 0, dan2: 0, dan3: 0, dan4: 0, dan5: 0, post: 0, faucet: 0, camera: 0 };
+      let any = false, savedAt = null;
+      for (const p of (s.plans || [])) {
+        try {
+          const rec = JSON.parse(fs.readFileSync(savePath(p.savekey), 'utf8'));
+          if (!rec.quantities) continue;
+          any = true;
+          const pq = rec.quantities;
+          if (pq.hasScale) q.hasScale = true;
+          const stSteps = recomputeStairsSteps(rec);   // 階段は図形から段数を再計算(古い保存も補正)
+          q.asphalt += pq.asphalt || 0; q.garden += pq.garden || 0; q.gravel += pq.gravel || 0;
+          q.curb += pq.curb || 0; q.dan1 += pq.dan1 || 0; q.dan2 += pq.dan2 || 0; q.dan3 += pq.dan3 || 0; q.dan4 += pq.dan4 || 0; q.dan5 += pq.dan5 || 0;
+          q.post += pq.post || 0; q.faucet += pq.faucet || 0; q.camera += pq.camera || 0;
+          q.stairs += (stSteps != null ? stSteps : (pq.stairs || 0));
+          if (rec.savedAt && (!savedAt || rec.savedAt > savedAt)) savedAt = rec.savedAt;
+        } catch { }
+      }
+      return { id: s.id, site: s.site, region: s.region, key: s.key, buildings: s.buildings || 1, quantities: any ? q : null, savedAt };
     });
     res.writeHead(200, { 'Content-Type': MIME['.json'] });
     return res.end(JSON.stringify({ sites: out, settings: loadCostSettings() }));
   }
   if (u.pathname === '/api/pdf') {
-    const s = sites.find(x => x.id === u.query.id);
-    if (!s) { res.writeHead(404); return res.end('no site'); }
-    if (RCLONE_REMOTE && s.path) {           // クラウド: rcloneでPDFを取り出してストリーム
+    let target = null;                       // pidで配置図(plan)を特定
+    for (const s of sites) { for (const p of (s.plans || [])) if (p.pid === u.query.pid) { target = p; break; } if (target) break; }
+    if (!target) { res.writeHead(404); return res.end('no plan'); }
+    if (RCLONE_REMOTE && target.path) {      // クラウド: rcloneでPDFを取り出してストリーム
       res.writeHead(200, { 'Content-Type': MIME['.pdf'] });
-      const ps = spawn('rclone', rcloneArgs(['cat', RCLONE_REMOTE + s.path]));
+      const ps = spawn('rclone', rcloneArgs(['cat', RCLONE_REMOTE + target.path]));
       ps.stdout.pipe(res);
       ps.on('error', () => { try { res.destroy(); } catch { } });
       return;
     }
-    return serveFile(res, s.file);
+    return serveFile(res, target.file);
   }
   res.writeHead(404); res.end('not found');
 });

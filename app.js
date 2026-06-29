@@ -112,21 +112,46 @@ function renderSites(list) {
   if (!list.length) { box.textContent = '配置図が見つかりません'; return; }
   box.innerHTML = '';
   list.forEach(s => {
+    const plans = s.plans || [];
     const d = document.createElement('div'); d.className = 'siteitem';
-    d.innerHTML = `<span>${s.site}</span><span class="reg">${s.region}</span>`;
-    d.onclick = () => openSite(s);
+    const nm = document.createElement('span'); nm.textContent = s.site; d.appendChild(nm);
+    const reg = document.createElement('span'); reg.className = 'reg';
+    reg.textContent = s.region + (plans.length > 1 ? '  ' : '');
+    if (plans.length > 1) {                       // 他号棟の配置図を選ぶトグル(行クリックはprimaryを開く)
+      const exp = document.createElement('span'); exp.className = 'planexp'; exp.textContent = `配置図${plans.length}枚 ▾`;
+      exp.title = '別の号棟の配置図を選ぶ';
+      exp.onclick = (e) => { e.stopPropagation(); togglePlans(s, d); };
+      reg.appendChild(exp);
+    }
+    d.appendChild(reg);
+    d.onclick = () => openPlan(s, plans[0]);       // 既定: primary(1号棟/原図)を即開く
     box.appendChild(d);
   });
+}
+// 複数配置図の現場: 行をクリックで配置図一覧を開閉
+function togglePlans(s, rowEl) {
+  const next = rowEl.nextElementSibling;
+  if (next && next.classList.contains('planlist')) { next.remove(); return; }
+  document.querySelectorAll('.planlist').forEach(e => e.remove());
+  const pl = document.createElement('div'); pl.className = 'planlist';
+  (s.plans || []).forEach(p => {
+    const b = document.createElement('div'); b.className = 'planitem';
+    b.textContent = '▸ ' + p.label;
+    b.onclick = (e) => { e.stopPropagation(); openPlan(s, p); };
+    pl.appendChild(b);
+  });
+  rowEl.after(pl);
 }
 function filterSites() {
   const q = document.getElementById('siteSearch').value.trim();
   renderSites(q ? ALL_SITES.filter(s => (s.site + s.region).includes(q)) : ALL_SITES);
 }
 async function rescanSites() { document.getElementById('siteList').textContent = 'スキャン中…'; await fetch('/api/rescan'); loadSites(); }
-async function openSite(s) {
-  S.siteKey = s.key || s.id;
-  document.getElementById('siteName').textContent = s.site;
-  const buf = await (await fetch('/api/pdf?id=' + s.id)).arrayBuffer();
+async function openPlan(s, p) {
+  if (!p) return;
+  S.siteKey = p.savekey || s.key;                 // 保存キーは配置図ごと(primaryは現場キーで既存保存と互換)
+  document.getElementById('siteName').textContent = s.site + (p.label ? ' — ' + p.label : '');
+  const buf = await (await fetch('/api/pdf?pid=' + encodeURIComponent(p.pid))).arrayBuffer();
   hidePicker();
   await loadPdfBuffer(buf);
   await loadSaved();
