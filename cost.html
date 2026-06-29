@@ -51,9 +51,13 @@
     <h3>メニュー</h3>
     <a href="/">🏗 外構図作成</a>
     <a href="/cost" class="active">💴 費用管理</a>
+    <a href="/admin" id="navAdmin" style="display:none">🛠 管理者</a>
   </div>
 </div>
-<script>function toggleNav(){document.getElementById('navMenu').classList.toggle('open');}</script>
+<script>
+function toggleNav(){document.getElementById('navMenu').classList.toggle('open');}
+fetch('/api/me').then(r=>r.json()).then(j=>{ if(j.owner) document.getElementById('navAdmin').style.display='block'; }).catch(()=>{});
+</script>
 
 <header id="chead">
   <button class="hamb" onclick="toggleNav()" title="メニュー">☰</button>

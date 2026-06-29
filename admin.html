@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理者 — 許可ユーザー</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  html, body { height: 100%; }
+  body { margin: 0; background: #f1f5f9; color: #0f172a; font-family: system-ui, sans-serif; display: flex; flex-direction: column; }
+  #chead { display: flex; align-items: center; gap: 10px; padding: 9px 14px; background: #0f172a; color: #fff; flex: none; }
+  #chead .brand { font-weight: 700; font-size: 16px; }
+  #chead .grow { flex: 1; }
+  #chead .info { color: #cbd5e1; font-size: 13px; }
+  .wrap { flex: 1; min-height: 0; padding: 16px; display: flex; justify-content: center; overflow: auto; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; width: 560px; max-width: 100%; height: fit-content; }
+  .card h2 { margin: 0 0 4px; font-size: 16px; }
+  .card .sub { color: #64748b; font-size: 12px; margin-bottom: 14px; line-height: 1.6; }
+  .addrow { display: flex; gap: 8px; margin-bottom: 14px; }
+  .addrow input { flex: 1; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
+  .list { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+  .urow { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-bottom: 1px solid #eef2f7; }
+  .urow:last-child { border-bottom: none; }
+  .urow .em { flex: 1; font-size: 13px; word-break: break-all; }
+  .urow .ownerTag { font-size: 11px; background: #dbeafe; color: #1d4ed8; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .urow .rm { background: #fee2e2; color: #b91c1c; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
+  .urow .rm:hover { background: #fecaca; }
+  .msg { font-size: 12px; margin-top: 10px; min-height: 16px; }
+  .msg.ok { color: #16a34a; } .msg.warn { color: #dc2626; }
+</style>
+</head>
+<body>
+<!-- ナビメニュー -->
+<div id="navMenu" class="navmenu" onclick="this.classList.remove('open')">
+  <div class="panel" onclick="event.stopPropagation()">
+    <button class="navclose" onclick="toggleNav()" title="閉じる">✕</button>
+    <h3>メニュー</h3>
+    <a href="/">🏗 外構図作成</a>
+    <a href="/cost">💴 費用管理</a>
+    <a href="/admin" class="active">🛠 管理者</a>
+  </div>
+</div>
+<script>function toggleNav(){document.getElementById('navMenu').classList.toggle('open');}</script>
+
+<header id="chead">
+  <button class="hamb" onclick="toggleNav()" title="メニュー">☰</button>
+  <span class="brand">🛠 管理者 — 許可ユーザー</span>
+  <span class="grow"></span>
+  <span class="info" id="countInfo"></span>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2>許可ユーザー一覧</h2>
+    <div class="sub">ここに登録されたGoogleアカウントだけがログインできます。追加・削除は即時反映されます（再起動不要）。<br>※入力したアドレスと、実際にGoogleログインで使うアドレスが完全一致している必要があります。</div>
+    <div class="addrow">
+      <input type="email" id="addEmail" placeholder="追加するメールアドレス" autocomplete="off">
+      <button class="btn primary" id="btnAdd">追加</button>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+<script src="admin.js"></script>
+</body>
+</html>

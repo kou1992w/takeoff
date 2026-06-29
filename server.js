@@ -24,7 +24,21 @@ function loadEnv() {
   } catch { }
 }
 loadEnv();
-const ALLOWLIST = (process.env.ALLOWLIST || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+// 許可リスト: allowlist.json を真として読む。無ければ .env ALLOWLIST から初期化して書き出す。
+// 管理者ページから追加/削除でき、再起動なしで即反映される(letで保持)。
+const ALLOW_FILE = path.join(__dirname, 'allowlist.json');
+const normEmail = e => (e || '').trim().toLowerCase();
+let ALLOWLIST = [];
+function loadAllowlist() {
+  try { ALLOWLIST = JSON.parse(fs.readFileSync(ALLOW_FILE, 'utf8')).map(normEmail).filter(Boolean); }
+  catch {
+    ALLOWLIST = (process.env.ALLOWLIST || '').split(',').map(normEmail).filter(Boolean);
+    try { fs.writeFileSync(ALLOW_FILE, JSON.stringify(ALLOWLIST)); } catch { }
+  }
+}
+function saveAllowlist() { ALLOWLIST = [...new Set(ALLOWLIST.map(normEmail).filter(Boolean))]; fs.writeFileSync(ALLOW_FILE, JSON.stringify(ALLOWLIST)); }
+loadAllowlist();
+const OWNER = normEmail(process.env.OWNER);   // 大元アカウント(管理者ページ専用)
 
 // ===== 認証(Googleログイン + 許可リスト) =====
 // GOOGLE_CLIENT_ID 等が未設定ならローカル動作優先で認証は無効(従来どおり)。
@@ -83,6 +97,8 @@ async function authCallback(req, res, u) {
   } catch (e) { res.writeHead(500); res.end('auth error'); }
 }
 function authLogout(req, res) { res.writeHead(302, { 'Set-Cookie': cookie('sess', '', 0), Location: '/auth/login' }); res.end(); }
+function sessionEmail(req) { const s = verifySession(parseCookies(req).sess); return s ? s.email : null; }
+function isOwner(req) { return AUTH_ENABLED ? (!!OWNER && sessionEmail(req) === OWNER) : true; }   // 認証OFF(ローカル)では常に許可
 
 // ===== 設定 =====
 const PORT = parseInt(process.env.PORT, 10) || 5050;
@@ -247,6 +263,31 @@ const server = http.createServer((req, res) => {
   if (u.pathname === '/' || u.pathname === '/index.html') return serveFile(res, path.join(__dirname, 'index.html'));
   if (u.pathname === '/app.js') return serveFile(res, path.join(__dirname, 'app.js'));
   if (u.pathname === '/style.css') return serveFile(res, path.join(__dirname, 'style.css'));
+  // 現在のログイン者が管理者か(ナビに管理者リンクを出すか判定するため)
+  if (u.pathname === '/api/me') { res.writeHead(200, { 'Content-Type': MIME['.json'] }); return res.end(JSON.stringify({ owner: isOwner(req) })); }
+  // --- 管理者ページ(大元アカウントのみ) ---
+  if (u.pathname === '/admin' || u.pathname === '/admin.html' || u.pathname === '/admin.js' || u.pathname === '/api/admin/allowlist') {
+    if (!isOwner(req)) { res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end('<meta charset="utf-8"><body style="font-family:sans-serif;padding:40px;text-align:center"><h2>権限がありません</h2><p>このページは管理者(大元アカウント)専用です。</p><p><a href="/">戻る</a></p></body>'); }
+    if (u.pathname === '/admin.js') return serveFile(res, path.join(__dirname, 'admin.js'));
+    if (u.pathname === '/admin' || u.pathname === '/admin.html') return serveFile(res, path.join(__dirname, 'admin.html'));
+    // /api/admin/allowlist
+    if (req.method === 'POST') {
+      let b = ''; req.on('data', c => { b += c; if (b.length > 1e5) req.destroy(); });
+      req.on('end', () => {
+        try {
+          const j = JSON.parse(b);
+          const add = normEmail(j.add), remove = normEmail(j.remove);
+          if (add) { if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(add)) { res.writeHead(400, { 'Content-Type': MIME['.json'] }); return res.end(JSON.stringify({ error: 'メール形式が正しくありません' })); } if (!ALLOWLIST.includes(add)) ALLOWLIST.push(add); }
+          if (remove) { if (remove === OWNER) { res.writeHead(400, { 'Content-Type': MIME['.json'] }); return res.end(JSON.stringify({ error: '大元アカウントは削除できません' })); } ALLOWLIST = ALLOWLIST.filter(e => e !== remove); }
+          saveAllowlist();
+          res.writeHead(200, { 'Content-Type': MIME['.json'] }); res.end(JSON.stringify({ list: ALLOWLIST, owner: OWNER }));
+        } catch { res.writeHead(400, { 'Content-Type': MIME['.json'] }); res.end(JSON.stringify({ error: 'リクエスト不正' })); }
+      });
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': MIME['.json'] });
+    return res.end(JSON.stringify({ list: ALLOWLIST, owner: OWNER }));
+  }
   if (u.pathname === '/api/sites') {
     // 配置図ごとの作成済判定: 保存があり描画要素が1つ以上
     const done = sk => { try { const r = JSON.parse(fs.readFileSync(savePath(sk), 'utf8')); return Array.isArray(r.elements) && r.elements.length > 0; } catch { return false; } };

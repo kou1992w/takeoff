@@ -3,4 +3,5 @@
 saves/
 sites.json
 cost-settings.json
+allowlist.json
 node_modules/
