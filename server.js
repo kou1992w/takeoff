@@ -327,6 +327,47 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // 外構図PDFをDriveの現場フォルダ配下「外構図/」へ保存(クラウド=rclone rcat / ローカルfs=直接書き込み)
+  // 前提: サービスアカウントに「A1現場情報」の編集者権限が必要(閲覧者のままだと書き込み失敗)
+  if (u.pathname === '/api/export' && req.method === 'POST') {
+    const key = String(u.query.key || '');
+    let site = null, plan = null;                    // savekeyで現場と配置図を特定(=クライアント任意のパスを受けない)
+    for (const s of sites) { for (const p of (s.plans || [])) if (p.savekey === key) { site = s; plan = p; break; } if (site) break; }
+    if (!site) { res.writeHead(404); return res.end('no site'); }
+    const chunks = []; let len = 0;
+    req.on('data', c => { chunks.push(c); len += c.length; if (len > 60e6) req.destroy(); });
+    req.on('end', () => {
+      const buf = Buffer.concat(chunks);
+      if (buf.length < 100) { res.writeHead(400); return res.end('empty'); }
+      const day = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);   // JST日付(同日再出力は上書き)
+      const multi = (site.plans || []).length > 1;
+      const name = `外構図_${site.site}${multi && plan.label ? '_' + plan.label : ''}_${day}.pdf`.replace(/[\\/:*?"<>|]/g, '_');
+      const json = (code, obj) => { res.writeHead(code, { 'Content-Type': MIME['.json'] }); res.end(JSON.stringify(obj)); };
+      if (RCLONE_REMOTE) {
+        const dest = site.key + '/外構図/' + name;
+        const ps = spawn('rclone', rcloneArgs(['rcat', RCLONE_REMOTE + dest]));
+        let err = '', done = false;
+        ps.stderr.on('data', c => err += c);
+        ps.on('close', code => {
+          if (done) return; done = true;
+          if (code === 0) return json(200, { ok: true, path: dest });
+          console.error('[export] rclone rcat 失敗:', err.trim().slice(-500));
+          json(500, { error: 'Driveへの保存に失敗しました(サービスアカウントの書き込み権限を確認)' });
+        });
+        ps.on('error', () => { if (!done) { done = true; json(500, { error: 'rclone起動に失敗しました' }); } });
+        ps.stdin.end(buf);
+        return;
+      }
+      // ローカルfs: key=現場フォルダの絶対パス
+      try {
+        const dir = path.join(site.key, '外構図');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, name), buf);
+        json(200, { ok: true, path: path.join(site.site, '外構図', name) });
+      } catch (e) { json(500, { error: '保存に失敗しました: ' + e.message }); }
+    });
+    return;
+  }
   // --- 費用管理 ---
   if (u.pathname === '/cost' || u.pathname === '/cost.html') return serveFile(res, path.join(__dirname, 'cost.html'));
   if (u.pathname === '/cost.js') return serveFile(res, path.join(__dirname, 'cost.js'));

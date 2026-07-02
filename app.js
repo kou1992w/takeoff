@@ -973,7 +973,30 @@ async function exportPDF() {
   const m = 8; const aw = pw - m * 2, ah = ph - m * 2;
   const r = Math.min(aw / S.imgW, ah / S.imgH);
   pdf.addImage(img, 'JPEG', m, m, S.imgW * r, S.imgH * r);
-  pdf.save('拾い結果.pdf');
+
+  // ファイル名: 外構図_現場名(_号棟)_日付.pdf (どの現場か分かるように)
+  const d = new Date();
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const s = S.currentSite;
+  const plan = s ? (s.plans || []).find(p => p.savekey === S.siteKey) : null;
+  const multi = s && (s.plans || []).length > 1;
+  const fname = (s ? `外構図_${s.site}${multi && plan && plan.label ? '_' + plan.label : ''}_${day}` : `外構図_${day}`).replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
+  pdf.save(fname);                                   // 端末にもダウンロード(従来どおり)
+
+  // Driveの現場フォルダにも保存(ローカルファイルを直接開いた場合はスキップ)
+  if (s && S.siteKey) {
+    showLoading('Googleドライブへ保存中…');
+    try {
+      const resp = await fetch('/api/export?key=' + encodeURIComponent(S.siteKey), { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: pdf.output('blob') });
+      const j = await resp.json().catch(() => ({}));
+      hideLoading();
+      if (resp.ok && j.ok) alert('Googleドライブに保存しました:\n' + j.path);
+      else alert('ドライブへの保存に失敗しました。\n' + (j.error || 'エラー ' + resp.status) + '\n(端末へのダウンロードは完了しています)');
+    } catch (e) {
+      hideLoading();
+      alert('ドライブへの保存に失敗しました(通信エラー)。\n端末へのダウンロードは完了しています。');
+    }
+  }
 }
 function pathCtx(ctx, pts, close) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); if (close) ctx.closePath(); }
 function drawElemToCtx(ctx, el) {
