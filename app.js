@@ -90,7 +90,7 @@ function setupUI() {
   document.getElementById('btnClear').addEventListener('click', clearAllDrawings);
   document.getElementById('btnFit').addEventListener('click', fitView);
   document.getElementById('btnExport').addEventListener('click', exportPDF);
-  document.getElementById('btnSave').addEventListener('click', () => saveState(true));
+  document.getElementById('btnSave').addEventListener('click', saveManual);
   document.getElementById('btnBack').addEventListener('click', showPicker);
   document.getElementById('planSwitch').addEventListener('change', switchPlan);
   // 現場選択画面
@@ -957,9 +957,8 @@ function renderLegend() {
 }
 
 // ===== PDF出力 =====
-async function exportPDF() {
-  if (!S.imgW) { alert('配置図を読み込んでください'); return; }
-  // 背景+図形を画像座標の素解像度で合成
+// 背景+図形を画像座標の素解像度で合成してjsPDFを作る(出力とドライブ保存で共用)
+function buildPDF() {
   const c = document.createElement('canvas'); c.width = S.imgW; c.height = S.imgH;
   const ctx = c.getContext('2d');
   ctx.drawImage(S.bgLayer.getChildren()[0].image(), 0, 0, S.imgW, S.imgH);
@@ -979,21 +978,29 @@ async function exportPDF() {
   const ts = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}`;
   const s = S.currentSite;
   const fname = (s ? `外構図_${s.site}_${s.buildings || 1}棟_${ts}` : `外構図_${ts}`).replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
-  pdf.save(fname);                                   // 端末にもダウンロード(従来どおり)
-
-  // Driveの現場フォルダにも保存(ローカルファイルを直接開いた場合はスキップ)
-  if (s && S.siteKey) {
-    showLoading('Googleドライブへ保存中…');
-    try {
-      const resp = await fetch('/api/export?key=' + encodeURIComponent(S.siteKey), { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: pdf.output('blob') });
-      const j = await resp.json().catch(() => ({}));
-      hideLoading();
-      if (resp.ok && j.ok) alert('Googleドライブに保存しました:\n' + j.path);
-      else alert('ドライブへの保存に失敗しました。\n' + (j.error || 'エラー ' + resp.status) + '\n(端末へのダウンロードは完了しています)');
-    } catch (e) {
-      hideLoading();
-      alert('ドライブへの保存に失敗しました(通信エラー)。\n端末へのダウンロードは完了しています。');
-    }
+  return { pdf, fname };
+}
+// PDF出力: 作業中の内容を端末にダウンロードするだけ(保存とは無関係)
+function exportPDF() {
+  if (!S.imgW) { alert('配置図を読み込んでください'); return; }
+  const { pdf, fname } = buildPDF();
+  pdf.save(fname);
+}
+// 保存ボタン: 作図データを保存し、外構図PDFをドライブの現場フォルダにも保存
+async function saveManual() {
+  await saveState(true);
+  if (!S.imgW || !S.currentSite || !S.siteKey) return;   // 配置図未読込・ローカルPDF直開きはデータ保存のみ
+  const { pdf } = buildPDF();
+  showLoading('Googleドライブへ保存中…');
+  try {
+    const resp = await fetch('/api/export?key=' + encodeURIComponent(S.siteKey), { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: pdf.output('blob') });
+    const j = await resp.json().catch(() => ({}));
+    hideLoading();
+    if (resp.ok && j.ok) alert('Googleドライブに保存しました:\n' + j.path);
+    else alert('ドライブへの保存に失敗しました。\n' + (j.error || 'エラー ' + resp.status) + '\n(作図データの保存は完了しています)');
+  } catch (e) {
+    hideLoading();
+    alert('ドライブへの保存に失敗しました(通信エラー)。\n作図データの保存は完了しています。');
   }
 }
 function pathCtx(ctx, pts, close) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); if (close) ctx.closePath(); }

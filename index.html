@@ -65,7 +65,7 @@ fetch('/api/me').then(r=>r.json()).then(j=>{ if(j.owner) document.getElementById
     <button class="btn" id="btnClear" title="描画をすべて削除">全消去</button>
     <button class="btn" id="btnFit" title="全体表示">全体表示</button>
     <span class="sep"></span>
-    <button class="btn" id="btnSave" title="現場ごとに自動保存。手動でも保存できます">保存</button>
+    <button class="btn" id="btnSave" title="作図データを保存し、外構図PDFをドライブの現場フォルダにも保存します">保存</button>
     <span id="saveInfo" class="info"></span>
     <button class="btn primary" id="btnExport">PDF出力</button>
   </header>
