@@ -104,6 +104,9 @@ function isOwner(req) { return AUTH_ENABLED ? (!!OWNER && sessionEmail(req) === 
 const PORT = parseInt(process.env.PORT, 10) || 5050;
 const BASE = process.env.BASE_DIR || 'I:/マイドライブ/A1現場情報';  // ローカルfsモードの現場フォルダ
 const RCLONE_REMOTE = process.env.RCLONE_REMOTE || ''; // 例: "gdrive:" 。設定時はクラウド(rclone)モード、未設定ならローカルfs
+// 書き込み用リモート(未設定ならRCLONE_REMOTEと同じ)。SAは保存容量quotaを持てずマイドライブに書き込めないため、
+// 書き込みだけユーザーOAuthのリモート(gdrivew:)を使う
+const RCLONE_WRITE = process.env.RCLONE_WRITE_REMOTE || RCLONE_REMOTE;
 const RCLONE_CONF = process.env.RCLONE_CONF || '';     // rclone.conf のパス(任意)
 function rcloneArgs(extra) { const a = extra.slice(); if (RCLONE_CONF) a.push('--config', RCLONE_CONF); return a; }
 const CACHE = path.join(__dirname, 'sites.json'); // 現場一覧キャッシュ
@@ -328,7 +331,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   // 外構図PDFをDriveの現場フォルダ配下「外構図作成/」へ保存(クラウド=rclone rcat / ローカルfs=直接書き込み)
-  // 前提: サービスアカウントに「A1現場情報」の編集者権限が必要(閲覧者のままだと書き込み失敗)
+  // 前提: 書き込みリモート(RCLONE_WRITE_REMOTE)に「A1現場情報」への書き込み権限が必要
   if (u.pathname === '/api/export' && req.method === 'POST') {
     const key = String(u.query.key || '');
     let site = null, plan = null;                    // savekeyで現場と配置図を特定(=クライアント任意のパスを受けない)
@@ -344,7 +347,7 @@ const server = http.createServer((req, res) => {
       const json = (code, obj) => { res.writeHead(code, { 'Content-Type': MIME['.json'] }); res.end(JSON.stringify(obj)); };
       if (RCLONE_REMOTE) {
         const dest = site.key + '/外構図作成/' + name;
-        const ps = spawn('rclone', rcloneArgs(['rcat', RCLONE_REMOTE + dest]));
+        const ps = spawn('rclone', rcloneArgs(['rcat', RCLONE_WRITE + dest]));
         let err = '', done = false;
         ps.stderr.on('data', c => err += c);
         ps.on('close', code => {
