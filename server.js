@@ -327,7 +327,7 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
-  // 外構図PDFをDriveの現場フォルダ配下「外構図/」へ保存(クラウド=rclone rcat / ローカルfs=直接書き込み)
+  // 外構図PDFをDriveの現場フォルダ配下「外構図作成/」へ保存(クラウド=rclone rcat / ローカルfs=直接書き込み)
   // 前提: サービスアカウントに「A1現場情報」の編集者権限が必要(閲覧者のままだと書き込み失敗)
   if (u.pathname === '/api/export' && req.method === 'POST') {
     const key = String(u.query.key || '');
@@ -339,12 +339,11 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       const buf = Buffer.concat(chunks);
       if (buf.length < 100) { res.writeHead(400); return res.end('empty'); }
-      const day = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);   // JST日付(同日再出力は上書き)
-      const multi = (site.plans || []).length > 1;
-      const name = `外構図_${site.site}${multi && plan.label ? '_' + plan.label : ''}_${day}.pdf`.replace(/[\\/:*?"<>|]/g, '_');
+      const ts = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', '_').replace(':', '');   // JSTタイムスタンプ(例 2026-07-03_1430)
+      const name = `外構図_${site.site}_${site.buildings || 1}棟_${ts}.pdf`.replace(/[\\/:*?"<>|]/g, '_');
       const json = (code, obj) => { res.writeHead(code, { 'Content-Type': MIME['.json'] }); res.end(JSON.stringify(obj)); };
       if (RCLONE_REMOTE) {
-        const dest = site.key + '/外構図/' + name;
+        const dest = site.key + '/外構図作成/' + name;
         const ps = spawn('rclone', rcloneArgs(['rcat', RCLONE_REMOTE + dest]));
         let err = '', done = false;
         ps.stderr.on('data', c => err += c);
@@ -360,10 +359,10 @@ const server = http.createServer((req, res) => {
       }
       // ローカルfs: key=現場フォルダの絶対パス
       try {
-        const dir = path.join(site.key, '外構図');
+        const dir = path.join(site.key, '外構図作成');
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(path.join(dir, name), buf);
-        json(200, { ok: true, path: path.join(site.site, '外構図', name) });
+        json(200, { ok: true, path: path.join(site.site, '外構図作成', name) });
       } catch (e) { json(500, { error: '保存に失敗しました: ' + e.message }); }
     });
     return;

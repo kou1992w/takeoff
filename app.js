@@ -974,13 +974,11 @@ async function exportPDF() {
   const r = Math.min(aw / S.imgW, ah / S.imgH);
   pdf.addImage(img, 'JPEG', m, m, S.imgW * r, S.imgH * r);
 
-  // ファイル名: 外構図_現場名(_号棟)_日付.pdf (どの現場か分かるように)
-  const d = new Date();
-  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  // ファイル名: 外構図_現場名_棟数棟_タイムスタンプ.pdf (どの現場か分かるように)
+  const d = new Date(), z = n => String(n).padStart(2, '0');
+  const ts = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}`;
   const s = S.currentSite;
-  const plan = s ? (s.plans || []).find(p => p.savekey === S.siteKey) : null;
-  const multi = s && (s.plans || []).length > 1;
-  const fname = (s ? `外構図_${s.site}${multi && plan && plan.label ? '_' + plan.label : ''}_${day}` : `外構図_${day}`).replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
+  const fname = (s ? `外構図_${s.site}_${s.buildings || 1}棟_${ts}` : `外構図_${ts}`).replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
   pdf.save(fname);                                   // 端末にもダウンロード(従来どおり)
 
   // Driveの現場フォルダにも保存(ローカルファイルを直接開いた場合はスキップ)
