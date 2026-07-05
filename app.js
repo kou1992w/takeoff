@@ -133,6 +133,12 @@ function renderSites(list) {
       badge.textContent = dn ? '✓作成済' : '未作成';
     }
     reg.appendChild(badge);
+    if (doneCount > 0) {                          // 作成済みの外構図を号棟順に1つのPDFでダウンロード
+      const dl = document.createElement('button'); dl.className = 'sitedl'; dl.textContent = 'PDF↓';
+      dl.title = '作成済みの外構図をまとめてPDFダウンロード(1号棟から順)';
+      dl.onclick = (e) => { e.stopPropagation(); exportSitePDF(s); };
+      reg.appendChild(dl);
+    }
     reg.appendChild(document.createTextNode(s.region + (plans.length > 1 ? '  ' : '')));
     if (plans.length > 1) {                       // 他号棟の配置図を選ぶトグル(行クリックはprimaryを開く)
       const exp = document.createElement('span'); exp.className = 'planexp'; exp.textContent = `配置図${plans.length}枚 ▾`;
@@ -179,8 +185,10 @@ async function openPlan(s, p) {
     await loadPdfBuffer(buf);
     await loadSaved();
     updatePlanSwitcher();                         // 同じ現場の配置図切替セレクトを更新
+    return true;
   } catch (e) {
     alert('配置図の読み込みに失敗しました。通信状況を確認して、もう一度お試しください。');
+    return false;
   } finally {
     hideLoading();
   }
@@ -957,34 +965,79 @@ function renderLegend() {
 }
 
 // ===== PDF出力 =====
-// 背景+図形を画像座標の素解像度で合成してjsPDFを作る(出力とドライブ保存で共用)
-function buildPDF() {
+// 表示中の配置図+図形を画像座標の素解像度で合成した画像を作る
+function renderCurrentImage() {
   const c = document.createElement('canvas'); c.width = S.imgW; c.height = S.imgH;
   const ctx = c.getContext('2d');
   ctx.drawImage(S.bgLayer.getChildren()[0].image(), 0, 0, S.imgW, S.imgH);
   for (const el of S.elements) drawElemToCtx(ctx, el);
-  const img = c.toDataURL('image/jpeg', 0.92);
-
+  return c.toDataURL('image/jpeg', 0.92);
+}
+// 表示中の内容をjsPDFの現在ページに貼る(余白8mm・アスペクト維持)
+function addCurrentAsPage(pdf) {
+  const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
+  const m = 8; const r = Math.min((pw - m * 2) / S.imgW, (ph - m * 2) / S.imgH);
+  pdf.addImage(renderCurrentImage(), 'JPEG', m, m, S.imgW * r, S.imgH * r);
+}
+// ファイル名: 外構図_現場名_棟数棟_タイムスタンプ.pdf (どの現場か分かるように)
+function siteFileName(site) {
+  const d = new Date(), z = n => String(n).padStart(2, '0');
+  const ts = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}`;
+  return ((site ? `外構図_${site.site}_${site.buildings || 1}棟_` : '外構図_') + ts).replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
+}
+// 表示中の1枚だけのjsPDFを作る(ドライブ保存・手動PDF用)
+function buildPDF() {
   const { jsPDF } = window.jspdf;
   const landscape = S.imgW >= S.imgH;
   const pdf = new jsPDF({ orientation: landscape ? 'l' : 'p', unit: 'mm', format: 'a3' });
-  const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
-  const m = 8; const aw = pw - m * 2, ah = ph - m * 2;
-  const r = Math.min(aw / S.imgW, ah / S.imgH);
-  pdf.addImage(img, 'JPEG', m, m, S.imgW * r, S.imgH * r);
-
-  // ファイル名: 外構図_現場名_棟数棟_タイムスタンプ.pdf (どの現場か分かるように)
-  const d = new Date(), z = n => String(n).padStart(2, '0');
-  const ts = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}`;
-  const s = S.currentSite;
-  const fname = (s ? `外構図_${s.site}_${s.buildings || 1}棟_${ts}` : `外構図_${ts}`).replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
-  return { pdf, fname };
+  addCurrentAsPage(pdf);
+  return { pdf, fname: siteFileName(S.currentSite) };
 }
-// PDF出力: 作業中の内容を端末にダウンロードするだけ(保存とは無関係)
-function exportPDF() {
+// PDF出力: 現場の作成済み外構図を号棟順にまとめてダウンロード(保存とは無関係)
+async function exportPDF() {
+  if (S.currentSite) return exportSitePDF(S.currentSite);
   if (!S.imgW) { alert('配置図を読み込んでください'); return; }
-  const { pdf, fname } = buildPDF();
+  const { pdf, fname } = buildPDF();                 // 手動で開いたローカルPDFは表示中の1枚のみ
   pdf.save(fname);
+}
+// 現場まるごとPDF: 作成済み(描画が保存されている)配置図を1号棟から順に1つのPDFに結合
+function planSortKey(label) { const m = String(label || '').match(/\d+/); return m ? parseInt(m[0], 10) : 9999; }
+async function exportSitePDF(site) {
+  if (S._exporting) return;
+  if (!site || !(site.plans || []).length) { alert('この現場には配置図がありません'); return; }
+  S._exporting = true;
+  const fromPicker = document.getElementById('picker').style.display !== 'none';
+  const prevSite = S.currentSite, prevKey = S.siteKey;
+  try {
+    if (S.siteKey) await saveState(true);            // 編集中の内容を確定してから出力に反映
+    const plans = (site.plans || []).slice()
+      .sort((a, b) => planSortKey(a.label) - planSortKey(b.label) || String(a.label).localeCompare(String(b.label), 'ja'));
+    const targets = [];
+    for (const p of plans) {                         // 描画が保存されている配置図だけを対象に
+      try { const j = await (await fetch('/api/load?key=' + encodeURIComponent(p.savekey))).json(); if (j && Array.isArray(j.elements) && j.elements.length) targets.push(p); } catch { }
+    }
+    if (!targets.length) { alert('この現場にはまだ作成済みの外構図がありません'); return; }
+    const { jsPDF } = window.jspdf;
+    let pdf = null;
+    for (let i = 0; i < targets.length; i++) {
+      showLoading(`外構図PDFを作成中… (${i + 1}/${targets.length})`);
+      if (await openPlan(site, targets[i]) === false) continue;   // 読めなかった配置図は飛ばす
+      const landscape = S.imgW >= S.imgH;
+      if (!pdf) pdf = new jsPDF({ orientation: landscape ? 'l' : 'p', unit: 'mm', format: 'a3' });
+      else pdf.addPage('a3', landscape ? 'l' : 'p');
+      addCurrentAsPage(pdf);
+    }
+    if (!pdf) { alert('外構図の読み込みに失敗しました。通信状況を確認してください。'); return; }
+    pdf.save(siteFileName(site));
+  } finally {
+    hideLoading();
+    S._exporting = false;
+    if (fromPicker) showPicker();                    // 一覧から実行した場合は一覧に戻る
+    else if (prevSite) {                             // 編集画面からは元の配置図に戻す
+      const p = (prevSite.plans || []).find(x => x.savekey === prevKey) || (prevSite.plans || [])[0];
+      await openPlan(prevSite, p);
+    }
+  }
 }
 // 保存ボタン: 作図データを保存し、外構図PDFをドライブの現場フォルダにも保存
 async function saveManual() {

@@ -61,6 +61,8 @@ html, body { margin: 0; height: 100%; font-family: "Segoe UI", "Meiryo", sans-se
 .siteitem .reg { color: #6b7280; font-size: 12px; }
 .planexp { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #eff6ff; color: #2563eb; font-size: 11px; cursor: pointer; border: 1px solid #bfdbfe; }
 .planexp:hover { background: #dbeafe; }
+.sitedl { display: inline-block; margin-right: 6px; padding: 2px 8px; border-radius: 999px; background: #ecfdf5; color: #047857; font-size: 11px; cursor: pointer; border: 1px solid #a7f3d0; }
+.sitedl:hover { background: #d1fae5; }
 .donebadge { display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px; }
 .donebadge.done { background: #dcfce7; color: #15803d; }
 .donebadge.partial { background: #fef9c3; color: #a16207; }
