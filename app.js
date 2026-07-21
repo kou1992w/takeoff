@@ -971,6 +971,8 @@ function renderCurrentImage() {
   const ctx = c.getContext('2d');
   ctx.drawImage(S.bgLayer.getChildren()[0].image(), 0, 0, S.imgW, S.imgH);
   for (const el of S.elements) drawElemToCtx(ctx, el);
+  // 段数/種別ラベルは他の図形に隠れないよう最後にまとめて描く(常に最前面)
+  for (const el of S.elements) if (CATS[el.cat] && CATS[el.cat].kind === 'line') drawLineLabelToCtx(ctx, el);
   return c.toDataURL('image/jpeg', 0.92);
 }
 // 表示中の内容をjsPDFの現在ページに貼る(余白8mm・アスペクト維持)
@@ -1057,6 +1059,18 @@ async function saveManual() {
   }
 }
 function pathCtx(ctx, pts, close) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); if (close) ctx.closePath(); }
+// 線要素の段数/種別ラベル(白背景チップ)。他の図形の上に重ねるため単独関数にしてある
+function drawLineLabelToCtx(ctx, el) {
+  const cat = CATS[el.cat];
+  const lp = el.labelPos || polylineMidpoint(el.points);
+  const txt = el.cat === 'block_curb' ? '地先' : `${el.dan}段`;
+  const fz = S.mPerPx ? Math.max(0.32 / S.mPerPx, 9) : 13, pad = fz * 0.18;
+  ctx.font = `bold ${fz.toFixed(0)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(txt).width;
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(lp.x - tw / 2 - pad, lp.y - fz / 2 - pad, tw + pad * 2, fz + pad * 2);
+  ctx.strokeStyle = cat.color; ctx.lineWidth = Math.max(fz * 0.04, 0.6); ctx.strokeRect(lp.x - tw / 2 - pad, lp.y - fz / 2 - pad, tw + pad * 2, fz + pad * 2);
+  ctx.fillStyle = cat.color; ctx.fillText(txt, lp.x, lp.y);
+}
 function drawElemToCtx(ctx, el) {
   if (el.cat === 'legend') {            // 既存のKonvaノードを画像化して合成
     if (!el.node) return;
@@ -1073,16 +1087,7 @@ function drawElemToCtx(ctx, el) {
   }
   if (cat.kind === 'line') {
     pathCtx(ctx, el.points, false); ctx.strokeStyle = cat.color; ctx.lineWidth = lineW('line'); ctx.lineCap = 'butt'; ctx.lineJoin = 'round'; ctx.stroke();
-    // 段数/種別ラベル
-    const lp = el.labelPos || polylineMidpoint(el.points);
-    const txt = el.cat === 'block_curb' ? '地先' : `${el.dan}段`;
-    const fz = S.mPerPx ? Math.max(0.32 / S.mPerPx, 9) : 13, pad = fz * 0.18;
-    ctx.font = `bold ${fz.toFixed(0)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const tw = ctx.measureText(txt).width;
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(lp.x - tw / 2 - pad, lp.y - fz / 2 - pad, tw + pad * 2, fz + pad * 2);
-    ctx.strokeStyle = cat.color; ctx.lineWidth = Math.max(fz * 0.04, 0.6); ctx.strokeRect(lp.x - tw / 2 - pad, lp.y - fz / 2 - pad, tw + pad * 2, fz + pad * 2);
-    ctx.fillStyle = cat.color; ctx.fillText(txt, lp.x, lp.y);
-    return;
+    return;   // 段数/種別ラベルは renderCurrentImage 側で最後に描く
   }
   // area
   if (cat.style === 'hatch') {
