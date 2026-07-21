@@ -114,6 +114,19 @@ const SAVES = path.join(__dirname, 'saves');      // 現場ごとの作図デー
 const RESCAN_MS = 24 * 60 * 60 * 1000;            // 起動時の再スキャン判定(24h)。定期実行は毎日JST0時(下部)
 try { fs.mkdirSync(SAVES); } catch { }
 function savePath(key) { return path.join(SAVES, crypto.createHash('sha1').update(String(key)).digest('hex') + '.json'); }
+const BACKUPS = path.join(SAVES, 'backup');       // 上書き前の作図データ(直近10世代)
+try { fs.mkdirSync(BACKUPS); } catch { }
+function readSave(key) { try { return JSON.parse(fs.readFileSync(savePath(key), 'utf8')); } catch { return {}; } }
+// 上書き前に直前版を退避。現場ごとに新しい10世代だけ残す。
+function backupSave(key) {
+  try {
+    const src = savePath(key); if (!fs.existsSync(src)) return;
+    const h = path.basename(src, '.json');
+    fs.copyFileSync(src, path.join(BACKUPS, `${h}_${Date.now()}.json`));
+    const old = fs.readdirSync(BACKUPS).filter(f => f.startsWith(h + '_')).sort().slice(0, -10);
+    for (const f of old) { try { fs.unlinkSync(path.join(BACKUPS, f)); } catch { } }
+  } catch (e) { console.error('[save] バックアップ失敗:', e.message); }
+}
 
 // ===== PDFキャッシュ(VMディスク) =====
 // 配置図PDFをDriveから取り出す代わりにディスクから返して高速化。md5(scanで取得)で変更検知。
@@ -340,6 +353,15 @@ const server = http.createServer((req, res) => {
         const rec = j.data || {};
         if (j.quantities) rec.quantities = j.quantities;   // 費用算出用の数量サマリも保存
         rec.savedAt = Date.now();
+        // 中身のある作図を空データで上書きするのは「自動保存」だけ拒否する。
+        // (サーバー再起動などで /api/load に失敗したタブが、空の状態で自動保存すると作図が消えるため。
+        //  手動保存=ユーザーが全消しして保存した意思表示なので通す)
+        const cur = readSave(j.key);
+        if (!j.manual && Array.isArray(cur.elements) && cur.elements.length > 0 && !(rec.elements || []).length) {
+          console.warn('[save] 空データによる上書きを拒否:', j.key);
+          res.writeHead(409); return res.end('empty-overwrite-rejected');
+        }
+        backupSave(j.key);                                   // 直前版を saves/backup/ に退避(誤操作からの復旧用)
         fs.writeFileSync(savePath(j.key), JSON.stringify(rec));
         res.writeHead(200); res.end('ok');
       }

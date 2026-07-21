@@ -187,6 +187,9 @@ async function openPlan(s, p) {
     updatePlanSwitcher();                         // 同じ現場の配置図切替セレクトを更新
     return true;
   } catch (e) {
+    // 途中で落ちた場合は編集画面に留まらせない(空の状態で自動保存されて作図が消えるのを防ぐ)
+    S.siteKey = null; clearElements();
+    showPicker();
     alert('配置図の読み込みに失敗しました。通信状況を確認して、もう一度お試しください。');
     return false;
   } finally {
@@ -235,7 +238,12 @@ function costQuantities() {
 async function saveState(manual) {
   if (!S.siteKey) return;
   try {
-    await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: S.siteKey, data: serializeState(), quantities: costQuantities() }) });
+    const r = await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: S.siteKey, data: serializeState(), quantities: costQuantities(), manual: !!manual }) });
+    if (r.status === 409) {   // サーバーが空データでの自動上書きを拒否(保存済みの作図を守るため)
+      document.getElementById('saveInfo').textContent = '保存済みの作図を保護しました';
+      return;
+    }
+    if (!r.ok) throw new Error('save failed');
     const t = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
     document.getElementById('saveInfo').textContent = (manual ? '保存しました ' : '自動保存 ') + t;
   } catch { document.getElementById('saveInfo').textContent = '保存失敗'; }
@@ -256,8 +264,10 @@ function clearElements() {
 async function loadSaved() {
   S._loaded = false;
   clearElements();                               // 前の現場の内容を必ず破棄(クリアな状態から)
-  try { const j = await (await fetch('/api/load?key=' + encodeURIComponent(S.siteKey))).json(); if (j && j.elements) loadStateData(j); }
-  catch {}
+  // 読み込みに失敗したまま編集画面に入ると、空の状態が自動保存されて作図が消える。
+  // 失敗時は _loaded を立てずに(=自動保存させずに)呼び出し元へ投げる。
+  const j = await (await fetch('/api/load?key=' + encodeURIComponent(S.siteKey))).json();
+  if (j && j.elements) loadStateData(j);
   recalc(); restyleStrokes();
   S._loaded = true;
   S.hist = [JSON.stringify(serializeState())]; S.hi = 0; updateUndoRedoButtons(); // 履歴をこの現場で初期化
