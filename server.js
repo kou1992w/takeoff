@@ -225,11 +225,10 @@ function siteCode(s) {
 }
 // 現場名: フォルダ名の先頭にある日付(例 "2025 10 13_")を除いた部分
 function siteName(s) { return String(s.site || '').replace(/^\d{4}[\s._-]*\d{1,2}[\s._-]*\d{1,2}[_\s]+/, ''); }
-// 外構図PDFのファイル名 外構図_現場コード_現場名_N棟(_タイムスタンプ)
-function pdfName(s, ts) {
+// 外構図PDFのファイル名 外構図_現場コード_現場名_N棟.pdf (ダウンロード・Drive保存とも共通)
+function pdfName(s) {
   const code = siteCode(s);
-  return (`外構図_${code ? code + '_' : ''}${siteName(s)}_${s.buildings || 1}棟` + (ts ? '_' + ts : '') + '.pdf')
-    .replace(/[\\/:*?"<>|]/g, '_');
+  return `外構図_${code ? code + '_' : ''}${siteName(s)}_${s.buildings || 1}棟.pdf`.replace(/[\\/:*?"<>|]/g, '_');
 }
 function scan() {
   if (RCLONE_REMOTE) {
@@ -381,8 +380,7 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       const buf = Buffer.concat(chunks);
       if (buf.length < 100) { res.writeHead(400); return res.end('empty'); }
-      const ts = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', '_').replace(':', '');   // JSTタイムスタンプ(例 2026-07-03_1430)
-      const name = pdfName(site, ts);   // Drive保存は履歴が残るようタイムスタンプ付き
+      const name = pdfName(site);       // Drive保存もタイムスタンプなし(同名なら上書き=最新1つだけ残す)
       const json = (code, obj) => { res.writeHead(code, { 'Content-Type': MIME['.json'] }); res.end(JSON.stringify(obj)); };
       if (RCLONE_REMOTE) {
         const dest = site.key + '/外構図作成/' + name;
