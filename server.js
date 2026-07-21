@@ -201,6 +201,23 @@ function buildPlans(raw, siteKey, srcField) {
     return plan;
   });
 }
+// 現場コード: 配置図ファイル名末尾の管理番号(例 …1号棟(26065300100).pdf)の先頭6桁。
+// キャッシュ(sites.json)に無い旧データでも動くよう、plansのパスから都度求める。取れなければ ''。
+function siteCode(s) {
+  for (const p of (s.plans || [])) {
+    const m = String(p.path || p.file || '').match(/\((\d{6,})\)[^()\\/]*\.pdf$/i);
+    if (m) return m[1].slice(0, 6);
+  }
+  return '';
+}
+// 現場名: フォルダ名の先頭にある日付(例 "2025 10 13_")を除いた部分
+function siteName(s) { return String(s.site || '').replace(/^\d{4}[\s._-]*\d{1,2}[\s._-]*\d{1,2}[_\s]+/, ''); }
+// 外構図PDFのファイル名 外構図_現場コード_現場名_N棟(_タイムスタンプ)
+function pdfName(s, ts) {
+  const code = siteCode(s);
+  return (`外構図_${code ? code + '_' : ''}${siteName(s)}_${s.buildings || 1}棟` + (ts ? '_' + ts : '') + '.pdf')
+    .replace(/[\\/:*?"<>|]/g, '_');
+}
 function scan() {
   if (RCLONE_REMOTE) {
     // クラウド(rclone): リモート配下の全ファイルを取得してグループ化
@@ -305,7 +322,7 @@ const server = http.createServer((req, res) => {
     // 配置図ごとの作成済判定: 保存があり描画要素が1つ以上
     const done = sk => { try { const r = JSON.parse(fs.readFileSync(savePath(sk), 'utf8')); return Array.isArray(r.elements) && r.elements.length > 0; } catch { return false; } };
     // クライアントには path/file は渡さない(pid/savekey/label/doneのみ)
-    const out = sites.map(s => ({ id: s.id, key: s.key, region: s.region, site: s.site, buildings: s.buildings, plans: (s.plans || []).map(p => ({ pid: p.pid, label: p.label, savekey: p.savekey, done: done(p.savekey) })) }));
+    const out = sites.map(s => ({ id: s.id, key: s.key, region: s.region, site: s.site, buildings: s.buildings, pdfName: pdfName(s), plans: (s.plans || []).map(p => ({ pid: p.pid, label: p.label, savekey: p.savekey, done: done(p.savekey) })) }));
     res.writeHead(200, { 'Content-Type': MIME['.json'] });
     return res.end(JSON.stringify({ sites: out }));
   }
@@ -343,7 +360,7 @@ const server = http.createServer((req, res) => {
       const buf = Buffer.concat(chunks);
       if (buf.length < 100) { res.writeHead(400); return res.end('empty'); }
       const ts = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', '_').replace(':', '');   // JSTタイムスタンプ(例 2026-07-03_1430)
-      const name = `外構図_${site.site}_${site.buildings || 1}棟_${ts}.pdf`.replace(/[\\/:*?"<>|]/g, '_');
+      const name = pdfName(site, ts);   // Drive保存は履歴が残るようタイムスタンプ付き
       const json = (code, obj) => { res.writeHead(code, { 'Content-Type': MIME['.json'] }); res.end(JSON.stringify(obj)); };
       if (RCLONE_REMOTE) {
         const dest = site.key + '/外構図作成/' + name;

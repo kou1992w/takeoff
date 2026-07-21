@@ -981,11 +981,13 @@ function addCurrentAsPage(pdf) {
   const m = 8; const r = Math.min((pw - m * 2) / S.imgW, (ph - m * 2) / S.imgH);
   pdf.addImage(renderCurrentImage(), 'JPEG', m, m, S.imgW * r, S.imgH * r);
 }
-// ファイル名: 外構図_現場名_棟数棟_タイムスタンプ.pdf (どの現場か分かるように)
+// ファイル名: 外構図_現場コード_現場名_N棟.pdf (サーバーが/api/sitesで組み立てたpdfNameを使う)
+// 手動で開いたローカルPDFは現場が特定できないのでタイムスタンプ名にする。
 function siteFileName(site) {
+  if (site && site.pdfName) return site.pdfName;
   const d = new Date(), z = n => String(n).padStart(2, '0');
   const ts = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}`;
-  return ((site ? `外構図_${site.site}_${site.buildings || 1}棟_` : '外構図_') + ts).replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
+  return ('外構図_' + ts).replace(/[\\/:*?"<>|]/g, '_') + '.pdf';
 }
 // 表示中の1枚だけのjsPDFを作る(ドライブ保存・手動PDF用)
 function buildPDF() {
