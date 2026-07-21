@@ -35,3 +35,13 @@ sudo systemctl restart takeoff
 - ログ: `journalctl -u takeoff -f`
 - コード更新: `cd ~/takeoff && git pull && sudo systemctl restart takeoff`
 - 再スキャン: アプリ内「Driveを再スキャン」ボタン(または `/api/rescan`)
+
+## 作図データの保護（2026-07-21）
+サーバー再起動中にアプリのタブが `/api/load` に失敗すると、空の状態のまま編集画面に入り、
+その後の自動保存で保存済みの作図が空データで上書きされる事故が起きた（東根市神町東 第5）。対策:
+
+- `/api/save`: 保存済みが非空で、**自動保存**が空 → 409で拒否（手動保存＝全消しの意思表示は通す）
+- 上書き前に `saves/backup/<hash>_<epoch>.json` へ退避（現場ごと直近10世代）
+- クライアント: 配置図/保存データの読み込みに失敗したら編集画面に入らず現場一覧へ戻す
+
+**更新時の注意**: `sudo systemctl restart takeoff` は誰かが編集中だと一時的に通信が切れる。作業時間帯を避けるのが望ましい。
