@@ -187,6 +187,95 @@ function recomputeStairsSteps(rec) {
   return steps;
 }
 
+// ===== 表示する現場の絞り込み(工程表スプレッドシート) =====
+// 会社の現場管理スプレッドシートに載っている現場だけを一覧に出す。突き合わせは現場コード(6桁)。
+// 取得はDriveと同じサービスアカウント(drive.readonly)を使い、シートをCSVエクスポートして読む。
+// 前提: このスプレッドシートを、そのSAのメールに「閲覧者」で共有しておくこと。
+// SA鍵やシートが未設定/取得失敗のときは絞り込まない(=全件表示。アプリが空になる事故を防ぐフェイルオープン)。
+const SHEET_ID = process.env.SHEET_ID || '1zL-SZjpFGc2Cmne3Y2y8GBEExAAf8ivOD4e0bRgEbB8';
+const SHEET_GID = process.env.SHEET_GID || '21800988';
+const ALLOW_CODES_FILE = path.join(__dirname, 'allow-codes.json'); // 直近取得の現場コード(取得失敗時のフォールバック)
+let ALLOW_CODES = null;                                            // Set<string>。null=絞り込み無効(全件)
+const norm6 = c => { const d = String(c || '').replace(/\D/g, ''); return d ? d.padStart(6, '0').slice(-6) : ''; };
+try { const a = JSON.parse(fs.readFileSync(ALLOW_CODES_FILE, 'utf8')); if (Array.isArray(a) && a.length) ALLOW_CODES = new Set(a.map(norm6).filter(Boolean)); } catch { }
+
+// SA鍵ファイルの場所: SA_KEY_FILE 優先。無ければ rclone.conf の service_account_file を流用。
+function saKeyFile() {
+  if (process.env.SA_KEY_FILE) return process.env.SA_KEY_FILE;
+  try { const m = fs.readFileSync(RCLONE_CONF, 'utf8').match(/service_account_file\s*=\s*(.+)/); if (m) return m[1].trim(); } catch { }
+  return '';
+}
+// SAのJWTでアクセストークンを取得(約1時間キャッシュ)。依存なし(Node crypto でRS256署名)。
+let _saTok = null;
+const b64url = buf => Buffer.from(buf).toString('base64url');
+async function saAccessToken() {
+  if (_saTok && _saTok.exp > Date.now() + 60000) return _saTok.token;
+  const kf = saKeyFile(); if (!kf) throw new Error('SA鍵ファイル未設定');
+  const sa = JSON.parse(fs.readFileSync(kf, 'utf8'));
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = b64url(JSON.stringify({ iss: sa.client_email, scope: 'https://www.googleapis.com/auth/drive.readonly', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
+  const sig = b64url(crypto.createSign('RSA-SHA256').update(`${header}.${claim}`).sign(sa.private_key));
+  const body = JSON.parse(await httpsPostForm('oauth2.googleapis.com', '/token', { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: `${header}.${claim}.${sig}` }));
+  if (!body.access_token) throw new Error('トークン取得失敗: ' + (body.error_description || body.error || ''));
+  _saTok = { token: body.access_token, exp: Date.now() + (body.expires_in || 3600) * 1000 };
+  return _saTok.token;
+}
+// GET(リダイレクトを1段追う。認証ヘッダは追随先にも付ける)
+function httpsGet(u, headers) {
+  return new Promise((resolve, reject) => {
+    const opt = url.parse(u); opt.headers = headers;
+    https.get(opt, resp => {
+      if ([301, 302, 303, 307, 308].includes(resp.statusCode) && resp.headers.location) { resp.resume(); return resolve(httpsGet(resp.headers.location, headers)); }
+      if (resp.statusCode !== 200) { resp.resume(); return reject(new Error('HTTP ' + resp.statusCode)); }
+      const chunks = []; resp.on('data', c => chunks.push(c)); resp.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    }).on('error', reject);
+  });
+}
+// CSVパース(依存なし。RFC4180: ダブルクオート/改行/カンマ対応)
+function parseCsv(text) {
+  const rows = []; let row = [], field = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; } else field += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else if (c === '\r') { /* skip */ }
+    else field += c;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+// スプレッドシートをCSV取得し、先頭表(現場管理表)の「現場コード」列だけを集合化する。
+// 同一タブ内で下に続く「図面同期ログ」は空行区切りの手前で止めることで拾わない。
+async function refreshAllowCodes() {
+  if (!saKeyFile() || !SHEET_ID) { ALLOW_CODES = null; return; }   // 未設定=絞り込みなし
+  try {
+    const tok = await saAccessToken();
+    const csv = await httpsGet(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`, { Authorization: 'Bearer ' + tok });
+    const rows = parseCsv(csv);
+    let hi = -1, col = -1;
+    for (let i = 0; i < rows.length; i++) { const j = rows[i].findIndex(c => /現場コード/.test(c)); if (j >= 0) { hi = i; col = j; break; } }
+    if (col < 0) throw new Error('「現場コード」列が見つかりません');
+    const codes = new Set();
+    for (let i = hi + 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (r.every(c => String(c).trim() === '')) break;   // 空行=先頭表の終わり
+      const v = norm6(r[col]); if (v) codes.add(v);
+    }
+    if (!codes.size) throw new Error('現場コードが0件');
+    ALLOW_CODES = codes;
+    fs.writeFileSync(ALLOW_CODES_FILE, JSON.stringify([...codes]));
+    console.log(`[allow] 表示対象 ${codes.size} 現場コードを取得`);
+  } catch (e) {
+    // 失敗時は前回取得分(persisted)を維持。全件表示(null)には戻さない
+    console.error('[allow] スプレッドシート取得失敗(前回の一覧を使用):', e.message);
+  }
+}
+// 一覧に出す現場か(絞り込み無効なら常にtrue)。現場コードで突き合わせる。
+function siteAllowed(s) { return !ALLOW_CODES || ALLOW_CODES.has(norm6(siteCode(s))); }
+
 let sites = [];
 
 // ===== 配置図スキャン =====
@@ -333,12 +422,12 @@ const server = http.createServer((req, res) => {
   if (u.pathname === '/api/sites') {
     // 配置図ごとの作成済判定: 保存があり描画要素が1つ以上
     const done = sk => { try { const r = JSON.parse(fs.readFileSync(savePath(sk), 'utf8')); return Array.isArray(r.elements) && r.elements.length > 0; } catch { return false; } };
-    // クライアントには path/file は渡さない(pid/savekey/label/doneのみ)
-    const out = sites.map(s => ({ id: s.id, key: s.key, region: s.region, site: s.site, buildings: s.buildings, pdfName: pdfName(s), plans: (s.plans || []).map(p => ({ pid: p.pid, label: p.label, savekey: p.savekey, done: done(p.savekey) })) }));
+    // クライアントには path/file は渡さない(pid/savekey/label/doneのみ)。スプレッドシート掲載の現場だけに絞る。
+    const out = sites.filter(siteAllowed).map(s => ({ id: s.id, key: s.key, region: s.region, site: s.site, buildings: s.buildings, pdfName: pdfName(s), plans: (s.plans || []).map(p => ({ pid: p.pid, label: p.label, savekey: p.savekey, done: done(p.savekey) })) }));
     res.writeHead(200, { 'Content-Type': MIME['.json'] });
     return res.end(JSON.stringify({ sites: out }));
   }
-  if (u.pathname === '/api/rescan') { scan(); res.writeHead(200); return res.end('ok'); }
+  if (u.pathname === '/api/rescan') { scan(); refreshAllowCodes(); res.writeHead(200); return res.end('ok'); }
   if (u.pathname === '/api/load') {
     res.writeHead(200, { 'Content-Type': MIME['.json'] });
     try { return res.end(fs.readFileSync(savePath(u.query.key), 'utf8')); } catch { return res.end('{}'); }
@@ -420,8 +509,8 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify(loadCostSettings()));
   }
   if (u.pathname === '/api/costsites') {
-    // 現場ごとに、その現場の全配置図(plans)の数量を合計して1現場ぶんにする
-    const out = sites.map(s => {
+    // 現場ごとに、その現場の全配置図(plans)の数量を合計して1現場ぶんにする(スプレッドシート掲載分のみ)
+    const out = sites.filter(siteAllowed).map(s => {
       const q = { hasScale: false, asphalt: 0, garden: 0, gravel: 0, stairs: 0, curb: 0, dan1: 0, dan2: 0, dan3: 0, dan4: 0, dan5: 0, post: 0, faucet: 0, camera: 0 };
       let any = false, savedAt = null;
       for (const p of (s.plans || [])) {
@@ -521,13 +610,14 @@ async function warmPdfCache() {
 }
 function scheduleDailyScan() {
   setTimeout(() => {
-    try { scan(); cleanPdfCache(); warmPdfCache(); console.log('[daily] 再スキャン完了 (' + new Date().toLocaleString('ja-JP') + ')'); }
+    try { scan(); cleanPdfCache(); warmPdfCache(); refreshAllowCodes(); console.log('[daily] 再スキャン完了 (' + new Date().toLocaleString('ja-JP') + ')'); }
     catch (e) { console.error('[daily] 失敗', e.message); }
     scheduleDailyScan();                   // 次のJST0時を再計算(ドリフト防止)
   }, msUntilNextJstMidnight());
 }
 
 loadCacheOrScan();
+refreshAllowCodes();                       // 起動時にスプレッドシートの表示対象を取得(失敗時は全件表示のまま)
 scheduleDailyScan();
 setTimeout(warmPdfCache, 3000);            // 起動3秒後に先読み(デプロイ後すぐ埋める)
 server.listen(PORT, () => console.log(`外構図作成: http://localhost:${PORT}  (現場 ${sites.length}件 / 認証 ${AUTH_ENABLED ? 'ON' : 'OFF'})`));
