@@ -131,6 +131,15 @@ fetch('/api/me').then(r=>r.json()).then(j=>{ if(j.owner) document.getElementById
       <div id="selInfo" class="selinfo">なし</div>
     </aside>
   </div>
+
+  <!-- 仮図など複数ページPDFの台紙ページ確認UI(下部)。自動選択をハイライト→違えば別ページをクリック。 -->
+  <div id="pagePick" class="pagepick" style="display:none">
+    <div class="pp-head">
+      <span>台紙にするページを選んでください（<b>自動で配置図ページを選択済み</b>。違う場合は下のページをクリック）</span>
+      <button class="btn primary" id="ppOk" onclick="hidePagePicker()">このページで作成 ✓</button>
+    </div>
+    <div id="ppThumbs" class="pp-thumbs"></div>
+  </div>
 </div>
 <script src="app.js"></script>
 </body>

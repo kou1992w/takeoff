@@ -112,23 +112,44 @@ async function loadSites() {
     box.innerHTML = 'サーバーに接続できません。<br><code>node server.js</code> を起動し、<b>http://localhost:5050</b> で開いてください。<br>（または下の「PDFを手動で開く」）';
   }
 }
+// plansを号棟(label)ごとにまとめる。配置図(hai)と仮図(kari)を1つずつ持つ。
+function planGroups(plans) {
+  const g = new Map();
+  (plans || []).forEach(p => {
+    if (!g.has(p.label)) g.set(p.label, { label: p.label });
+    const e = g.get(p.label);
+    if (p.kind === '仮図') { if (!e.kari) e.kari = p; } else { if (!e.hai) e.hai = p; }
+  });
+  return [...g.values()];
+}
+// 号棟の作成済判定: 配置図または仮図のどちらかが作成済ならtrue
+function grpDone(grp) { return !!(grp && ((grp.hai && grp.hai.done) || (grp.kari && grp.kari.done))); }
+
 function renderSites(list) {
   const box = document.getElementById('siteList');
-  if (!list.length) { box.textContent = '配置図が見つかりません'; return; }
+  if (!list.length) { box.textContent = '図面が見つかりません'; return; }
   box.innerHTML = '';
   list.forEach(s => {
     const plans = s.plans || [];
-    const doneCount = plans.filter(p => p.done).length;
+    const groups = planGroups(plans);
+    const doneCount = groups.filter(grpDone).length;
+    const hasKari = plans.some(p => p.kind === '仮図');
+    const onlyKari = groups.length > 0 && groups.every(grp => !grp.hai);   // 配置図が1枚も無い=仮図のみ(配置図未UP)
     const d = document.createElement('div'); d.className = 'siteitem';
     const nm = document.createElement('span'); nm.textContent = s.site; d.appendChild(nm);
+    if (onlyKari) {                                // 仮図のみの現場は「仮」タグ(急ぎ用)
+      const kt = document.createElement('span'); kt.className = 'karibadge'; kt.textContent = '仮';
+      kt.title = '配置図が未UP。仮図で作成できます';
+      nm.appendChild(document.createTextNode(' ')); nm.appendChild(kt);
+    }
     const reg = document.createElement('span'); reg.className = 'reg';
-    // 外構図 作成済/未 バッジ
+    // 外構図 作成済/未 バッジ(号棟単位)
     const badge = document.createElement('span');
-    if (plans.length > 1) {
-      badge.className = 'donebadge ' + (doneCount === plans.length ? 'done' : doneCount ? 'partial' : 'undone');
-      badge.textContent = `${doneCount}/${plans.length}作成`;
+    if (groups.length > 1) {
+      badge.className = 'donebadge ' + (doneCount === groups.length ? 'done' : doneCount ? 'partial' : 'undone');
+      badge.textContent = `${doneCount}/${groups.length}作成`;
     } else {
-      const dn = plans[0] && plans[0].done;
+      const dn = grpDone(groups[0]);
       badge.className = 'donebadge ' + (dn ? 'done' : 'undone');
       badge.textContent = dn ? '✓作成済' : '未作成';
     }
@@ -140,18 +161,19 @@ function renderSites(list) {
       reg.appendChild(dl);
     }
     reg.appendChild(document.createTextNode(s.region + (plans.length > 1 ? '  ' : '')));
-    if (plans.length > 1) {                       // 他号棟の配置図を選ぶトグル(行クリックはprimaryを開く)
-      const exp = document.createElement('span'); exp.className = 'planexp'; exp.textContent = `配置図${plans.length}枚 ▾`;
-      exp.title = '別の号棟の配置図を選ぶ';
+    if (plans.length > 1) {                       // 号棟が複数、または配置図＋仮図があるとき選択トグルを出す
+      const exp = document.createElement('span'); exp.className = 'planexp';
+      exp.textContent = (hasKari ? '図面を選ぶ' : `配置図${groups.length}枚`) + ' ▾';
+      exp.title = hasKari ? '号棟・配置図/仮図を選ぶ' : '別の号棟の配置図を選ぶ';
       exp.onclick = (e) => { e.stopPropagation(); togglePlans(s, d); };
       reg.appendChild(exp);
     }
     d.appendChild(reg);
-    d.onclick = () => openPlan(s, plans[0]);       // 既定: primary(1号棟/原図)を即開く
+    d.onclick = () => openPlan(s, plans[0]);       // 既定: 配置図の先頭(無ければ仮図)を開く
     box.appendChild(d);
   });
 }
-// 複数配置図の現場: 行をクリックで配置図一覧を開閉
+// 図面一覧: 号棟ごとに配置図/仮図を並べる。行クリックで開閉。
 function togglePlans(s, rowEl) {
   const next = rowEl.nextElementSibling;
   if (next && next.classList.contains('planlist')) { next.remove(); return; }
@@ -159,7 +181,10 @@ function togglePlans(s, rowEl) {
   const pl = document.createElement('div'); pl.className = 'planlist';
   (s.plans || []).forEach(p => {
     const b = document.createElement('div'); b.className = 'planitem';
-    const t = document.createElement('span'); t.textContent = '▸ ' + p.label; b.appendChild(t);
+    const t = document.createElement('span');
+    t.textContent = '▸ ' + (p.kind === '仮図' ? '［仮図］ ' : '') + p.label;
+    if (p.kind === '仮図') t.className = 'karitext';
+    b.appendChild(t);
     const st = document.createElement('span'); st.className = p.done ? 'pdone' : 'pundone'; st.textContent = p.done ? '✓作成済' : '未作成'; b.appendChild(st);
     b.onclick = (e) => { e.stopPropagation(); openPlan(s, p); };
     pl.appendChild(b);
@@ -173,24 +198,28 @@ function filterSites() {
 async function rescanSites() { document.getElementById('siteList').textContent = 'スキャン中…'; await fetch('/api/rescan'); loadSites(); }
 function showLoading(t) { const el = document.getElementById('loadingTip'); if (el) { el.querySelector('.ltext').textContent = t || '外構図を読み込み中…'; el.style.display = 'flex'; } }
 function hideLoading() { const el = document.getElementById('loadingTip'); if (el) el.style.display = 'none'; }
+async function loadSavedRecord(key) { try { return await (await fetch('/api/load?key=' + encodeURIComponent(key))).json(); } catch { return {}; } }
 async function openPlan(s, p) {
   if (!p) return;
-  S.currentSite = s;                              // 現在の現場(plans含む)を保持=作成画面から配置図を切替できる
-  S.siteKey = p.savekey || s.key;                 // 保存キーは配置図ごと(primaryは現場キーで既存保存と互換)
-  document.getElementById('siteName').textContent = s.site + (p.label ? ' — ' + p.label : '');
-  showLoading(s.site + (p.label ? ' — ' + p.label : '') + ' を読み込み中…');   // クリック直後に即表示(PDF取得に数秒かかるため)
+  S.currentSite = s;                              // 現在の現場(plans含む)を保持=作成画面から図面を切替できる
+  S.currentPlan = p;                              // 現在の図面(配置図/仮図)
+  S.siteKey = p.savekey || s.key;                 // 保存キーは図面ごと(配置図primaryは現場キーで既存保存と互換)
+  const suf = p.label ? ' — ' + (p.kind === '仮図' ? '［仮図］' : '') + p.label : '';
+  document.getElementById('siteName').textContent = s.site + suf;
+  showLoading(s.site + suf + ' を読み込み中…');   // クリック直後に即表示(PDF取得に数秒かかるため)
   try {
     const buf = await (await fetch('/api/pdf?pid=' + encodeURIComponent(p.pid))).arrayBuffer();
     hidePicker();
-    await loadPdfBuffer(buf);
-    await loadSaved();
-    updatePlanSwitcher();                         // 同じ現場の配置図切替セレクトを更新
+    const saved = await loadSavedRecord(S.siteKey);          // 保存を1回取得(選択ページ pdfPage の復元に使う)
+    await loadPdfBuffer(buf, { kind: p.kind, savedPage: saved && saved.pdfPage });
+    await loadSaved(saved);
+    updatePlanSwitcher();                         // 同じ現場の図面切替セレクトを更新
     return true;
   } catch (e) {
     // 途中で落ちた場合は編集画面に留まらせない(空の状態で自動保存されて作図が消えるのを防ぐ)
-    S.siteKey = null; clearElements();
+    S.siteKey = null; clearElements(); hidePagePicker();
     showPicker();
-    alert('配置図の読み込みに失敗しました。通信状況を確認して、もう一度お試しください。');
+    alert('図面の読み込みに失敗しました。通信状況を確認して、もう一度お試しください。');
     return false;
   } finally {
     hideLoading();
@@ -202,7 +231,7 @@ function updatePlanSwitcher() {
   const plans = (S.currentSite && S.currentSite.plans) || [];
   if (plans.length <= 1) { sel.style.display = 'none'; sel.innerHTML = ''; return; }
   sel.innerHTML = '';
-  plans.forEach(p => { const o = document.createElement('option'); o.value = p.pid; o.textContent = '配置図: ' + p.label; sel.appendChild(o); });
+  plans.forEach(p => { const o = document.createElement('option'); o.value = p.pid; o.textContent = (p.kind === '仮図' ? '仮図: ' : '配置図: ') + p.label; sel.appendChild(o); });
   const cur = plans.find(p => p.savekey === S.siteKey);
   if (cur) sel.value = cur.pid;
   sel.style.display = '';
@@ -219,7 +248,7 @@ async function switchPlan() {
 // ===== 保存 / 読み込み(現場ごと) =====
 function serializeState() {
   return {
-    v: 1, mPerPx: S.mPerPx, scaleDenom: S.scaleDenom, idSeq: S.idSeq,
+    v: 1, mPerPx: S.mPerPx, scaleDenom: S.scaleDenom, idSeq: S.idSeq, pdfPage: S.pdfPage || null,   // 仮図で選んだページを復元用に保持
     elements: S.elements.map(e => ({ id: e.id, cat: e.cat, points: e.points, dan: e.dan, orient: e.orient, fontScale: e.fontScale, labelPos: e.labelPos })),
   };
 }
@@ -261,12 +290,13 @@ function clearElements() {
   const si = document.getElementById('selInfo'); if (si) si.textContent = 'なし';
   S.previewLayer.destroyChildren(); S.previewLayer.batchDraw(); S.shapeLayer.batchDraw();
 }
-async function loadSaved() {
+async function loadSaved(pre) {
   S._loaded = false;
   clearElements();                               // 前の現場の内容を必ず破棄(クリアな状態から)
   // 読み込みに失敗したまま編集画面に入ると、空の状態が自動保存されて作図が消える。
   // 失敗時は _loaded を立てずに(=自動保存させずに)呼び出し元へ投げる。
-  const j = await (await fetch('/api/load?key=' + encodeURIComponent(S.siteKey))).json();
+  // pre: openPlanが取得済みの保存レコード(二重取得を避ける)。未指定なら取得する。
+  const j = (pre !== undefined) ? pre : await (await fetch('/api/load?key=' + encodeURIComponent(S.siteKey))).json();
   if (j && j.elements) loadStateData(j);
   recalc(); restyleStrokes();
   S._loaded = true;
@@ -280,7 +310,7 @@ function loadStateData(j) {
   for (const e of (j.elements || [])) { const el = Object.assign({}, e); delete el.node; S.elements.push(el); renderElement(el); }
   recalc(); restyleStrokes();
 }
-function showPicker() { document.getElementById('picker').style.display = 'flex'; document.getElementById('app').style.display = 'none'; loadSites(); }
+function showPicker() { hidePagePicker(); document.getElementById('picker').style.display = 'flex'; document.getElementById('app').style.display = 'none'; loadSites(); }
 function hidePicker() { document.getElementById('picker').style.display = 'none'; document.getElementById('app').style.display = 'flex'; S.stage.width(document.getElementById('stageWrap').clientWidth); S.stage.height(document.getElementById('stageWrap').clientHeight); }
 
 function onKey(e) {
@@ -311,20 +341,66 @@ async function onPdfChosen(e) {
   S._loaded = true; S.hist = [JSON.stringify(serializeState())]; S.hi = 0; updateUndoRedoButtons();
 }
 
-async function loadPdfBuffer(buf) {
+async function loadPdfBuffer(buf, opts = {}) {
   S._loaded = false;   // 読込中は自動保存/履歴記録を止める
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  S.pdf = pdf;         // ページ切替(仮図の確認UI)で再利用する
 
-  // 縮尺と本体ページを判定: 「配置図」と「1/100」等を含むページを優先(なければ最終ページ)
-  let target = 1, denom = null;
+  // 各ページを走査。仮図は1枚に付近見取図(1/1500)・求積図(1/150)・平面図(1/75)等が混在するため、
+  // 「配置図」タイトルに紐づく縮尺(配置図S:1/100 等)を最優先で読む。配置図単独ページ用に予備も持つ。
+  const pages = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const tc = await page.getTextContent();
     const txt = tc.items.map(t => t.str).join('').replace(/\s/g, '');
-    const m = txt.match(/1\/(\d{2,3})/);
-    if (txt.includes('配置図') && m) { target = i; denom = parseInt(m[1], 10); }
+    const isHaizu = txt.includes('配置図');
+    const mTitle = txt.match(/配置図S[:：]?1\/(\d{2,3})/);          // 「配置図 S:1/100」
+    const mGen = isHaizu ? txt.match(/1\/(\d{2,3})/) : null;         // 予備(配置図単独ページ)
+    const denom = mTitle ? parseInt(mTitle[1], 10) : (mGen ? parseInt(mGen[1], 10) : null);
+    let score = 0;
+    if (mTitle) score += 10;
+    if (/配置図S[:：]?1\/(100|150)/.test(txt)) score += 5; else if (isHaizu) score += 1;
+    pages.push({ i, denom, isHaizu, score });
   }
-  await renderPage(pdf, target, denom);
+  const best = pages.reduce((a, b) => (b.score > (a ? a.score : -1) ? b : a), null);
+  const target = (opts.savedPage && opts.savedPage >= 1 && opts.savedPage <= pdf.numPages) ? opts.savedPage
+    : (best && best.score > 0 ? best.i : 1);
+  const denomOf = n => (pages.find(x => x.i === n) || {}).denom || null;
+  S.pdfPage = target;
+  await renderPage(pdf, target, denomOf(target));
+  // 複数ページ(主に仮図)は、自動選択をハイライトしたページ確認UIを出す(確認/修正)。出力バッチ中は出さない。
+  if (pdf.numPages > 1 && !S._exporting) showPagePicker(pdf, pages, denomOf);
+  else hidePagePicker();
+}
+// ページ確認UI: 全ページのサムネイルを出し、自動選択ページをハイライト。クリックで台紙を差し替える。
+async function showPagePicker(pdf, pages, denomOf) {
+  const wrap = document.getElementById('pagePick'), thumbs = document.getElementById('ppThumbs');
+  if (!wrap || !thumbs) return;
+  thumbs.innerHTML = ''; wrap.style.display = 'flex';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const cell = document.createElement('div'); cell.className = 'pp-thumb' + (i === S.pdfPage ? ' sel' : '');
+    cell.dataset.page = i;
+    const cv = document.createElement('canvas');
+    const page = await pdf.getPage(i);
+    const vp = page.getViewport({ scale: 0.22 });
+    cv.width = vp.width; cv.height = vp.height;
+    await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+    cell.appendChild(cv);
+    const info = pages.find(x => x.i === i) || {};
+    const cap = document.createElement('div'); cap.className = 'pp-cap';
+    cap.textContent = `P${i}` + (info.isHaizu ? ' 配置図' : '') + (info.denom ? ` 1/${info.denom}` : '');
+    cell.appendChild(cap);
+    cell.onclick = () => pickPage(i, denomOf(i));
+    thumbs.appendChild(cell);
+  }
+}
+function hidePagePicker() { const w = document.getElementById('pagePick'); if (w) w.style.display = 'none'; }
+async function pickPage(n, denom) {
+  if (!S.pdf) return;
+  S.pdfPage = n;
+  await renderPage(S.pdf, n, denom);
+  document.querySelectorAll('#ppThumbs .pp-thumb').forEach(el => el.classList.toggle('sel', Number(el.dataset.page) === n));
+  if (S._loaded) scheduleSave();      // 選択ページを保存に反映(次回この号棟を開いた時に同じページを復元)
 }
 
 async function renderPage(pdf, pageNo, denom) {
@@ -1027,8 +1103,10 @@ async function exportSitePDF(site) {
     const plans = (site.plans || []).slice()
       .sort((a, b) => planSortKey(a.label) - planSortKey(b.label) || String(a.label).localeCompare(String(b.label), 'ja'));
     const targets = [];
-    for (const p of plans) {                         // 描画が保存されている配置図だけを対象に
-      try { const j = await (await fetch('/api/load?key=' + encodeURIComponent(p.savekey))).json(); if (j && Array.isArray(j.elements) && j.elements.length) targets.push(p); } catch { }
+    const seenLabel = new Set();                      // 号棟は1つだけ(同じ号棟の配置図+仮図を二重出力しない。配置図が先=優先)
+    for (const p of plans) {                          // 描画が保存されている図面だけを対象に
+      if (seenLabel.has(p.label)) continue;
+      try { const j = await loadSavedRecord(p.savekey); if (j && Array.isArray(j.elements) && j.elements.length) { targets.push(p); seenLabel.add(p.label); } } catch { }
     }
     if (!targets.length) { alert('この現場にはまだ作成済みの外構図がありません'); return; }
     const { jsPDF } = window.jspdf;

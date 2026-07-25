@@ -92,3 +92,18 @@ html, body { margin: 0; height: 100%; font-family: "Segoe UI", "Meiryo", sans-se
 .navmenu .panel a { display: block; padding: 13px 14px; border-radius: 8px; color: #0f172a; text-decoration: none; font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .navmenu .panel a:hover { background: #f1f5f9; }
 .navmenu .panel a.active { background: #eff6ff; color: #2563eb; }
+
+/* 仮図バッジ/タグ */
+.karibadge { display: inline-block; background: #b45309; color: #fff; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 6px; vertical-align: middle; }
+.planitem .karitext { color: #b45309; }
+
+/* 仮図など複数ページPDFの台紙ページ確認UI(下部固定) */
+.pagepick { position: fixed; left: 0; right: 0; bottom: 0; z-index: 150; background: #fff; border-top: 1px solid #cbd5e1; box-shadow: 0 -6px 20px rgba(15,23,42,.18); display: flex; flex-direction: column; max-height: 44vh; }
+.pp-head { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 8px 14px; font-size: 13px; color: #334155; border-bottom: 1px solid #eef2f7; }
+.pp-head b { color: #2563eb; }
+.pp-thumbs { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; }
+.pp-thumb { flex: 0 0 auto; cursor: pointer; border: 2px solid transparent; border-radius: 7px; padding: 3px; background: #f8fafc; text-align: center; }
+.pp-thumb:hover { background: #eff6ff; }
+.pp-thumb canvas { display: block; max-height: 27vh; width: auto; border: 1px solid #e2e8f0; border-radius: 3px; background: #fff; }
+.pp-thumb.sel { border-color: #2563eb; background: #eff6ff; }
+.pp-cap { font-size: 11px; margin-top: 3px; color: #475569; white-space: nowrap; }
