@@ -130,6 +130,15 @@ function planGroups(plans) {
 }
 // 号棟の作成済判定: 配置図または仮図のどちらかが作成済ならtrue
 function grpDone(grp) { return !!(grp && ((grp.hai && grp.hai.done) || (grp.kari && grp.kari.done))); }
+// 号棟を開くときの既定図面: 作成済みの方(配置図優先)を開く。
+// 配置図が未作成で仮図だけ作成済みなら仮図＝一覧の「作成済」バッジと開く中身を一致させる。
+// どちらも未作成なら配置図(無ければ仮図)。
+function defaultPlan(grp) {
+  if (!grp) return null;
+  if (grp.hai && grp.hai.done) return grp.hai;
+  if (grp.kari && grp.kari.done) return grp.kari;
+  return grp.hai || grp.kari || null;
+}
 
 function renderSites(list) {
   const box = document.getElementById('siteList');
@@ -175,7 +184,7 @@ function renderSites(list) {
       reg.appendChild(exp);
     }
     d.appendChild(reg);
-    d.onclick = () => openPlan(s, plans[0]);       // 既定: 配置図の先頭(無ければ仮図)を開く
+    d.onclick = () => openPlan(s, defaultPlan(groups[0]) || plans[0]);   // 既定: 先頭号棟の作成済み図面(無ければ配置図)
     box.appendChild(d);
   });
 }
