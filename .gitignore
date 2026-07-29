@@ -7,3 +7,4 @@ allowlist.json
 allow-codes.json
 pdfcache/
 node_modules/
+sites.json.*.bak

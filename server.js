@@ -299,24 +299,50 @@ function walk(dir, hits) {
 // 現場内の図面一覧(plans)を作る。スコア順に並べ、md5一致の重複だけ除去。
 // 配置図の先頭(primary=最良スコア)の保存キーは現場キーのまま(既存の保存と互換)。他はキー#pid。
 // 仮図は必ずキー#pid(配置図の保存と混ざらない)。kindで種別を持つ。
-function buildPlans(raw, siteKey, srcField, kind) {
+//
+// 【保存キーはフォルダ名に依存させない】(2026-07-29 変更)
+//  以前は保存キー = 現場フォルダのパス文字列だったため、着手日が変わって Drive 側の
+//  現場フォルダがリネームされると保存キーが変わり、保存済みの作図が「未保存」に見えていた。
+//  図面ファイル名の工事番号(11桁 = 上6桁:現場コード + 下5桁:号棟)は不変なので、これを土台にする。
+//   現場キー   : 'S' + 現場コード6桁            例 S265503
+//   図面キー   : 'S265503#26550300200'          (仮図は末尾 '@k' で配置図と分ける)
+//  工事番号が取れないファイルだけ従来のパス由来キーにフォールバックする。
+//
+// 図面ファイル名の工事番号(11桁)を返す。取れなければ ''。
+function workNo(src) {
+  const m = String(src || '').match(/\((\d{11})\)[^()\\/]*\.pdf$/i);
+  return m ? m[1] : '';
+}
+// 現場の安定キー。現場内のどれかの図面から工事番号が取れれば 'S'+現場コード6桁。
+function stableSiteKey(raw, srcField) {
+  for (const pl of raw) {
+    const w = workNo(pl[srcField] || pl.path || pl.file);
+    if (w) return 'S' + w.slice(0, 6);
+  }
+  return '';
+}
+function buildPlans(raw, siteKey, srcField, kind, stableKey) {
   raw.sort((a, b) => b.score - a.score || String(a.to).localeCompare(String(b.to), 'ja'));
   const seen = new Set(), uniq = [];
   for (const pl of raw) { if (pl.md5 && seen.has(pl.md5)) continue; if (pl.md5) seen.add(pl.md5); uniq.push(pl); }
+  const base = stableKey || siteKey;   // 工事番号が取れない現場だけ従来のパスキー
   return uniq.map((pl, j) => {
     const src = pl[srcField];
     const pid = crypto.createHash('sha1').update(String(src)).digest('hex').slice(0, 12);
-    const primary = (kind === '配置図' && j === 0);   // 配置図の先頭だけ現場キー(既存保存と互換)
-    const plan = { pid, kind, label: pl.to || pl.file, savekey: primary ? siteKey : siteKey + '#' + pid, md5: pl.md5 || '' };
+    const primary = (kind === '配置図' && j === 0);   // 配置図の先頭だけ現場キー
+    const w = workNo(src);
+    const tail = w ? (w + (kind === '仮図' ? '@k' : '')) : pid;
+    const plan = { pid, kind, label: pl.to || pl.file, savekey: primary ? base : base + '#' + tail, md5: pl.md5 || '' };
     plan[srcField] = src;   // path(クラウド) または file(ローカル)
     return plan;
   });
 }
 // 現場の全図面から配置図plans+仮図plansを作る(配置図が先。配置図が無ければ仮図だけ)
 function makePlans(raw, siteKey, srcField) {
+  const stableKey = stableSiteKey(raw, srcField);
   return [
-    ...buildPlans(raw.filter(r => r.kind === '配置図'), siteKey, srcField, '配置図'),
-    ...buildPlans(raw.filter(r => r.kind === '仮図'), siteKey, srcField, '仮図'),
+    ...buildPlans(raw.filter(r => r.kind === '配置図'), siteKey, srcField, '配置図', stableKey),
+    ...buildPlans(raw.filter(r => r.kind === '仮図'), siteKey, srcField, '仮図', stableKey),
   ];
 }
 // 現場コード: 配置図ファイル名末尾の管理番号(例 …1号棟(26065300100).pdf)の先頭6桁。
