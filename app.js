@@ -62,11 +62,26 @@ function lineW(kind) {
   return Math.max(realm / S.mPerPx, 1);
 }
 function stampRadius() { return S.mPerPx ? Math.max(0.2625 / S.mPerPx, 6) : 12; }
-// ブロック線の矢頭サイズ(画像px)。線幅基準だが、短い線では線長の3割までに抑えて左右の矢頭が重ならないようにする
+// ブロック線の矢頭サイズ(画像px)。線幅基準(長さ2.6倍・幅3.0倍)。
+// 幅は線幅よりはっきり広げないと矢頭が線に埋もれて「線の先が尖っただけ」に見える。
+// 短い線では線長の3割までに抑えて左右の矢頭が重ならないようにする。
 function arrowHead(pts) {
   const w = lineW('line'), len = polylineLen(pts);
-  const L = Math.max(Math.min(w * 2.0, len * 0.28), 1);
-  return { len: L, wid: L * 0.9 };
+  const L = Math.max(Math.min(w * 2.6, len * 0.3), 1);
+  return { len: L, wid: L * (3.0 / 2.6) };
+}
+// 矢頭のぶん両端を内側に縮めた線の頂点。線と矢頭を重ねずに描くため(先端がすっきりする)。
+// 端のセグメントより長く縮めると線が折れ点を越えて反転するので、セグメント長の6割までに制限する。
+function arrowLinePts(pts, ah) {
+  const out = pts.map(p => ({ x: p.x, y: p.y })), n = out.length, back = ah.len * 0.85;
+  const shrink = (i, j) => {
+    const dx = out[j].x - out[i].x, dy = out[j].y - out[i].y, d = Math.hypot(dx, dy);
+    if (!d) return;
+    const t = Math.min(back, d * 0.6) / d;
+    out[i] = { x: out[i].x + dx * t, y: out[i].y + dy * t };
+  };
+  shrink(0, 1); shrink(n - 1, n - 2);
+  return out;
 }
 // 矢頭(三角形)の頂点。tip=先端、from=向きを決める手前の点。
 // 画面(Konva)とPDF/PNG(canvas)で同じ関数を使い、見た目のズレを無くす。
@@ -637,7 +652,8 @@ function buildNode(el) {
     // Konva.Arrow は矢頭にも strokeWidth 分の輪郭が乗ってPDF出力(canvas)より一回り大きく見えるため、
     // 線と矢頭を分けて描き、矢頭は arrowHeadPts の三角形を塗るだけにする(=PDFと完全に同じ形)。
     const ah = arrowHead(el.points), pts = el.points, n = pts.length;
-    g.add(new Konva.Line({ points: flat, stroke: cat.color, strokeWidth: lineW('line'), strokeScaleEnabled: true, lineCap: 'butt', lineJoin: 'round', hitStrokeWidth: 16 }));
+    const body = arrowLinePts(pts, ah).flatMap(p => [p.x, p.y]);   // 線は矢頭の手前で止める
+    g.add(new Konva.Line({ points: body, stroke: cat.color, strokeWidth: lineW('line'), strokeScaleEnabled: true, lineCap: 'butt', lineJoin: 'round', hitStrokeWidth: 16 }));
     [[pts[0], pts[1]], [pts[n - 1], pts[n - 2]]].forEach(([tip, from]) => {
       g.add(new Konva.Line({ points: arrowHeadPts(tip, from, ah), closed: true, fill: cat.color, strokeEnabled: false, listening: false }));
     });
@@ -1215,8 +1231,8 @@ function drawElemToCtx(ctx, el) {
     ctx.fillText(cat.mark, p.x, p.y); return;
   }
   if (cat.kind === 'line') {
-    pathCtx(ctx, el.points, false); ctx.strokeStyle = cat.color; ctx.lineWidth = lineW('line'); ctx.lineCap = 'butt'; ctx.lineJoin = 'round'; ctx.stroke();
-    const ah = arrowHead(el.points), n = el.points.length;   // 両端に矢頭(画面表示と同じ)
+    const ah = arrowHead(el.points), n = el.points.length;   // 線は矢頭の手前で止め、両端に矢頭(画面表示と同じ)
+    pathCtx(ctx, arrowLinePts(el.points, ah), false); ctx.strokeStyle = cat.color; ctx.lineWidth = lineW('line'); ctx.lineCap = 'butt'; ctx.lineJoin = 'round'; ctx.stroke();
     arrowHeadCtx(ctx, el.points[0], el.points[1], ah, cat.color);
     arrowHeadCtx(ctx, el.points[n - 1], el.points[n - 2], ah, cat.color);
     return;   // 段数/種別ラベルは renderCurrentImage 側で最後に描く
