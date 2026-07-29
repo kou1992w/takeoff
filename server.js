@@ -328,8 +328,9 @@ function siteCode(s) {
   }
   return '';
 }
-// 現場名: フォルダ名の先頭にある日付(例 "2025 10 13_")を除いた部分
-function siteName(s) { return String(s.site || '').replace(/^\d{4}[\s._-]*\d{1,2}[\s._-]*\d{1,2}[_\s]+/, ''); }
+// 現場名: フォルダ名の先頭にある着手日(例 "2025／10／13_" "2025 10 13_")を除いた部分。
+// 区切りは全角スラッシュ・半角スラッシュ・空白・ドット等いずれも許容(Drive上の表記揺れ対策)。
+function siteName(s) { return String(s.site || '').replace(/^\d{4}[\s._\-\/／年]*\d{1,2}[\s._\-\/／月]*\d{1,2}[\s._\-\/／日]*[_\s　]+/, ''); }
 // 外構図PDFのファイル名 外構図_現場コード_現場名_N棟.pdf (ダウンロード・Drive保存とも共通)
 function pdfName(s) {
   const code = siteCode(s);
