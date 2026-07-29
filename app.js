@@ -65,8 +65,16 @@ function stampRadius() { return S.mPerPx ? Math.max(0.2625 / S.mPerPx, 6) : 12; 
 // ブロック線の矢頭サイズ(画像px)。線幅基準だが、短い線では線長の3割までに抑えて左右の矢頭が重ならないようにする
 function arrowHead(pts) {
   const w = lineW('line'), len = polylineLen(pts);
-  const L = Math.max(Math.min(w * 1.8, len * 0.28), 1);
+  const L = Math.max(Math.min(w * 2.0, len * 0.28), 1);
   return { len: L, wid: L * 0.9 };
+}
+// 矢頭(三角形)の頂点。tip=先端、from=向きを決める手前の点。
+// 画面(Konva)とPDF/PNG(canvas)で同じ関数を使い、見た目のズレを無くす。
+function arrowHeadPts(tip, from, ah) {
+  const a = Math.atan2(tip.y - from.y, tip.x - from.x);
+  const bx = tip.x - Math.cos(a) * ah.len, by = tip.y - Math.sin(a) * ah.len;   // 底辺の中心
+  const nx = -Math.sin(a) * ah.wid / 2, ny = Math.cos(a) * ah.wid / 2;          // 底辺の法線方向
+  return [tip.x, tip.y, bx + nx, by + ny, bx - nx, by - ny];
 }
 function restyleStrokes() { for (const el of S.elements) rebuildElement(el); keepStampSizes(); applyZOrder(); }  // 再生成後は重なり順を必ず再適用
 
@@ -625,13 +633,14 @@ function buildNode(el) {
   const flat = el.points.flatMap(p => [p.x, p.y]);
   if (cat.kind === 'line') {
     const g = new Konva.Group();
-    // 両端矢印。連続した線でも1本ごとの範囲(段数の切り替わり)が分かるようにする
-    const ah = arrowHead(el.points);
-    g.add(new Konva.Arrow({
-      points: flat, stroke: cat.color, fill: cat.color, strokeWidth: lineW('line'), strokeScaleEnabled: true,
-      pointerAtBeginning: true, pointerAtEnding: true, pointerLength: ah.len, pointerWidth: ah.wid,
-      lineCap: 'butt', lineJoin: 'round', hitStrokeWidth: 16,
-    }));
+    // 両端矢印。連続した線でも1本ごとの範囲(段数の切り替わり)が分かるようにする。
+    // Konva.Arrow は矢頭にも strokeWidth 分の輪郭が乗ってPDF出力(canvas)より一回り大きく見えるため、
+    // 線と矢頭を分けて描き、矢頭は arrowHeadPts の三角形を塗るだけにする(=PDFと完全に同じ形)。
+    const ah = arrowHead(el.points), pts = el.points, n = pts.length;
+    g.add(new Konva.Line({ points: flat, stroke: cat.color, strokeWidth: lineW('line'), strokeScaleEnabled: true, lineCap: 'butt', lineJoin: 'round', hitStrokeWidth: 16 }));
+    [[pts[0], pts[1]], [pts[n - 1], pts[n - 2]]].forEach(([tip, from]) => {
+      g.add(new Konva.Line({ points: arrowHeadPts(tip, from, ah), closed: true, fill: cat.color, strokeEnabled: false, listening: false }));
+    });
     // 段数/種別ラベル(白背景・ドラッグで移動可。位置はlabelPosに保存)
     const lp = el.labelPos || polylineMidpoint(el.points);
     const txt = el.cat === 'block_curb' ? '地先' : `${el.dan}段`;
@@ -1173,12 +1182,10 @@ async function saveManual() {
   }
 }
 function pathCtx(ctx, pts, close) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); if (close) ctx.closePath(); }
-// 矢頭を1つ描く。tip=先端、from=向きを決める手前の点
+// 矢頭を1つ描く。頂点計算は画面表示(Konva)と同じ arrowHeadPts を使う
 function arrowHeadCtx(ctx, tip, from, ah, color) {
-  const a = Math.atan2(tip.y - from.y, tip.x - from.x);
-  const bx = tip.x - Math.cos(a) * ah.len, by = tip.y - Math.sin(a) * ah.len;   // 底辺の中心
-  const nx = -Math.sin(a) * ah.wid / 2, ny = Math.cos(a) * ah.wid / 2;          // 底辺の法線方向
-  ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(bx + nx, by + ny); ctx.lineTo(bx - nx, by - ny); ctx.closePath();
+  const p = arrowHeadPts(tip, from, ah);
+  ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[2], p[3]); ctx.lineTo(p[4], p[5]); ctx.closePath();
   ctx.fillStyle = color; ctx.fill();
 }
 // 線要素の段数/種別ラベル(白背景チップ)。他の図形の上に重ねるため単独関数にしてある
