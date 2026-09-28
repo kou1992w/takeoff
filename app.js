@@ -52,6 +52,7 @@ function init() {
   setupUI();
   renderLegend();
   setTool('select');
+  initBackNav();
   loadSites();
 }
 
@@ -347,6 +348,37 @@ function loadStateData(j) {
   if (j.mPerPx) { S.mPerPx = j.mPerPx; S.scaleDenom = j.scaleDenom || null; updateScaleInfo((j.scaleDenom ? '1/' + j.scaleDenom : '手動')); markScaleButtons(); }
   for (const e of (j.elements || [])) { const el = Object.assign({}, e); delete el.node; S.elements.push(el); renderElement(el); }
   recalc(); restyleStrokes();
+}
+// ===== ブラウザ/スマホの「戻る」 =====
+// 履歴を何も積んでいないと、戻る=アプリから離脱になってしまう。常に1つ先の履歴エントリを
+// 持たせておき、戻るが来たら画面の階層を1段だけ閉じて、また1つ積み直す。
+// 現場一覧(最上位)で戻ったときだけ、本当の離脱を通す。pushStateが使えない環境では従来動作。
+let HIST_OK = true;
+function initBackNav() {
+  try { history.replaceState({ tk: 0 }, ''); history.pushState({ tk: 1 }, ''); }
+  catch (e) { HIST_OK = false; return; }
+  window.addEventListener('popstate', () => {
+    if (!HIST_OK) return;
+    if (closeOneLayer()) { try { history.pushState({ tk: 1 }, ''); } catch (e) { HIST_OK = false; } return; }
+    HIST_OK = false; history.back();   // 一覧まで戻り切った = 離脱してよい
+  });
+  // 離脱後に「進む」で戻ってきたとき(bfcache復帰=再読み込みされない)も、また1つ積み直す
+  window.addEventListener('pageshow', e => {
+    if (!e.persisted) return;
+    HIST_OK = true;
+    try { history.pushState({ tk: 1 }, ''); } catch (err) { HIST_OK = false; }
+  });
+}
+// 開いているものを上から1つだけ閉じる。閉じるものが無ければ false。
+function closeOneLayer() {
+  const nav = document.getElementById('navMenu');
+  if (nav && nav.classList.contains('open')) { nav.classList.remove('open'); return true; }
+  const inApp = document.getElementById('app').style.display !== 'none';
+  if (!inApp) return false;
+  const pp = document.getElementById('pagePick');
+  if (pp && pp.style.display !== 'none') { hidePagePicker(); return true; }
+  if (S.draft && S.draft.length) { cancelDraft(); return true; }   // 作図中はまず作図を取り消す
+  showPicker(); return true;                                        // 作図画面 → 現場一覧
 }
 function showPicker() { hidePagePicker(); document.getElementById('picker').style.display = 'flex'; document.getElementById('app').style.display = 'none'; loadSites(); }
 function hidePicker() { document.getElementById('picker').style.display = 'none'; document.getElementById('app').style.display = 'flex'; S.stage.width(document.getElementById('stageWrap').clientWidth); S.stage.height(document.getElementById('stageWrap').clientHeight); }
@@ -1043,9 +1075,12 @@ function fmt(v, u) { if (v == null || isNaN(v)) return '— ' + u; return v.toFi
 // ===== 集計 + 凡例 =====
 // 重なり順(z-order): 数値が大きいほど前面。普通ブロック>地先>スタンプ>階段下地>アスファルト>砕石>庭。凡例は最前面。
 const ZRANK = { garden: 0, gravel: 1, asphalt: 2, stairs: 3, post: 4, faucet: 4, camera: 4, block_curb: 5, block_normal: 6, legend: 7 };
+// 背面→前面の順に並べ替えた配列。画面(Konva)とPDF出力(canvas)の両方でこれを使い、
+// どちらでも同じ重なり順にする。同ランク内は作図順のまま(sortは安定)。
+function zSorted(list) { return list.slice().sort((a, b) => (ZRANK[a.cat] ?? 0) - (ZRANK[b.cat] ?? 0)); }
 function applyZOrder() {
   // 優先度の低い順に moveToTop していくと、最終的に高優先度が前面に並ぶ
-  S.elements.slice().sort((a, b) => (ZRANK[a.cat] ?? 0) - (ZRANK[b.cat] ?? 0)).forEach(el => { if (el.node) el.node.moveToTop(); });
+  zSorted(S.elements).forEach(el => { if (el.node) el.node.moveToTop(); });
   S.shapeLayer.batchDraw();
 }
 function recalc() { renderLegend(); for (const el of S.elements) if (el.cat === 'legend' && el.node) rebuildElement(el); applyZOrder(); if (S.selected) selectElement(S.selected); if (S._loaded && !S._restoring) recordHistory(); scheduleSave(); }
@@ -1105,9 +1140,12 @@ function renderCurrentImage() {
   const c = document.createElement('canvas'); c.width = S.imgW; c.height = S.imgH;
   const ctx = c.getContext('2d');
   ctx.drawImage(S.bgLayer.getChildren()[0].image(), 0, 0, S.imgW, S.imgH);
-  for (const el of S.elements) drawElemToCtx(ctx, el);
+  // 画面(Konva)と同じ重なり順で描く。配列順(=作図順)のまま描くと、後から描いた
+  // アスファルト等の範囲が地先ブロックの上に乗ってしまう(画面では正しいのにPDFだけ崩れる)。
+  const ordered = zSorted(S.elements);
+  for (const el of ordered) drawElemToCtx(ctx, el);
   // 段数/種別ラベルは他の図形に隠れないよう最後にまとめて描く(常に最前面)
-  for (const el of S.elements) if (CATS[el.cat] && CATS[el.cat].kind === 'line') drawLineLabelToCtx(ctx, el);
+  for (const el of ordered) if (CATS[el.cat] && CATS[el.cat].kind === 'line') drawLineLabelToCtx(ctx, el);
   return c.toDataURL('image/jpeg', 0.92);
 }
 // 表示中の内容をjsPDFの現在ページに貼る(余白8mm・アスペクト維持)
