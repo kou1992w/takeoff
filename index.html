@@ -16,7 +16,12 @@
   <div class="panel" onclick="event.stopPropagation()">
     <button class="navclose" onclick="toggleNav()" title="閉じる">✕</button>
     <h3>メニュー</h3>
-    <a href="/" class="active">🏗 外構図作成</a>
+    <!-- 現場一覧をこの中に折りたたむ。作図画面からでも別の現場に移れる -->
+    <button class="navlink active" onclick="toggleNavSites()" title="現場一覧を開く">🏗 外構図作成<span class="navcaret" id="navSitesCaret">▾</span></button>
+    <div id="navSites" class="navsites" hidden>
+      <input type="text" id="navSiteSearch" placeholder="現場名で検索…" oninput="filterNavSites()">
+      <div id="navSiteList" class="sitelist navsitelist">読み込み中…</div>
+    </div>
     <a href="/cost">💴 費用管理</a>
     <a href="/admin" id="navAdmin" style="display:none">🛠 管理者</a>
   </div>

@@ -138,9 +138,24 @@ async function loadSites() {
     const r = await fetch('/api/sites'); const j = await r.json();
     ALL_SITES = j.sites || [];
     renderSites(ALL_SITES);
+    renderSites(ALL_SITES, document.getElementById('navSiteList'));   // メニュー内の一覧も同じ中身で更新
   } catch (e) {
     box.innerHTML = 'サーバーに接続できません。<br><code>node server.js</code> を起動し、<b>http://localhost:5050</b> で開いてください。<br>（または下の「PDFを手動で開く」）';
   }
+}
+// メニューの「外構図作成」を開くと現場一覧が出る(作図画面からそのまま別の現場へ移れる)
+function toggleNavSites() {
+  const box = document.getElementById('navSites'); if (!box) return;
+  const open = box.hasAttribute('hidden');
+  if (open) box.removeAttribute('hidden'); else box.setAttribute('hidden', '');
+  const c = document.getElementById('navSitesCaret'); if (c) c.textContent = open ? '▴' : '▾';
+  if (!open) return;
+  if (ALL_SITES.length) renderSites(ALL_SITES, document.getElementById('navSiteList'));
+  else loadSites();                                   // まだ取れていなければ取りに行く
+}
+function filterNavSites() {
+  const q = document.getElementById('navSiteSearch').value.trim();
+  renderSites(q ? ALL_SITES.filter(s => (s.site + s.region).includes(q)) : ALL_SITES, document.getElementById('navSiteList'));
 }
 // plansを号棟(label)ごとにまとめる。配置図(hai)と仮図(kari)を1つずつ持つ。
 function planGroups(plans) {
@@ -164,8 +179,10 @@ function defaultPlan(grp) {
   return grp.hai || grp.kari || null;
 }
 
-function renderSites(list) {
-  const box = document.getElementById('siteList');
+// box 省略時は現場選択画面の一覧。メニュー内の一覧(#navSiteList)にも同じ中身を描く
+function renderSites(list, box) {
+  box = box || document.getElementById('siteList');
+  if (!box) return;
   if (!list.length) { box.textContent = '図面が見つかりません'; return; }
   box.innerHTML = '';
   list.forEach(s => {
@@ -240,6 +257,7 @@ function hideLoading() { const el = document.getElementById('loadingTip'); if (e
 async function loadSavedRecord(key) { try { return await (await fetch('/api/load?key=' + encodeURIComponent(key))).json(); } catch { return {}; } }
 async function openPlan(s, p) {
   if (!p) return;
+  const nav = document.getElementById('navMenu'); if (nav) nav.classList.remove('open');   // メニューから選んだときは閉じる
   S.currentSite = s;                              // 現在の現場(plans含む)を保持=作成画面から図面を切替できる
   S.currentPlan = p;                              // 現在の図面(配置図/仮図)
   S.siteKey = p.savekey || s.key;                 // 保存キーは図面ごと(配置図primaryは現場キーで既存保存と互換)
@@ -352,15 +370,19 @@ function loadStateData(j) {
 // ===== ブラウザ/スマホの「戻る」 =====
 // 履歴を何も積んでいないと、戻る=アプリから離脱になってしまう。常に1つ先の履歴エントリを
 // 持たせておき、戻るが来たら画面の階層を1段だけ閉じて、また1つ積み直す。
-// 現場一覧(最上位)で戻ったときだけ、本当の離脱を通す。pushStateが使えない環境では従来動作。
+// 現場一覧(最上位)で戻ったときは「何もせずその場に留まる」。
+//   ここで history.back() を通すと、ログイン直後の履歴は /auth/callback?code=..&state=..
+//   なので、使用済みの state で再訪して server.js の「bad state」(400)が出る。
+//   アプリから抜けたい人はタブを閉じるか戻るの長押しで飛べるので、留まる方を採る。
+// pushStateが使えない環境では従来動作(=離脱)にフォールバックする。
 let HIST_OK = true;
 function initBackNav() {
   try { history.replaceState({ tk: 0 }, ''); history.pushState({ tk: 1 }, ''); }
   catch (e) { HIST_OK = false; return; }
   window.addEventListener('popstate', () => {
     if (!HIST_OK) return;
-    if (closeOneLayer()) { try { history.pushState({ tk: 1 }, ''); } catch (e) { HIST_OK = false; } return; }
-    HIST_OK = false; history.back();   // 一覧まで戻り切った = 離脱してよい
+    closeOneLayer();                                                      // 閉じるものが無ければ何もしない
+    try { history.pushState({ tk: 1 }, ''); } catch (e) { HIST_OK = false; }
   });
   // 離脱後に「進む」で戻ってきたとき(bfcache復帰=再読み込みされない)も、また1つ積み直す
   window.addEventListener('pageshow', e => {
