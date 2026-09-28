@@ -258,6 +258,7 @@ async function loadSavedRecord(key) { try { return await (await fetch('/api/load
 async function openPlan(s, p) {
   if (!p) return;
   const nav = document.getElementById('navMenu'); if (nav) nav.classList.remove('open');   // メニューから選んだときは閉じる
+  await flushSave();                              // 今の図面の作図を確定させてから切り替える(持ち越さない)
   S.currentSite = s;                              // 現在の現場(plans含む)を保持=作成画面から図面を切替できる
   S.currentPlan = p;                              // 現在の図面(配置図/仮図)
   S.siteKey = p.savekey || s.key;                 // 保存キーは図面ごと(配置図primaryは現場キーで既存保存と互換)
@@ -298,8 +299,7 @@ async function switchPlan() {
   const s = S.currentSite; if (!s) return;
   const p = (s.plans || []).find(x => x.pid === sel.value);
   if (!p || p.savekey === S.siteKey) return;
-  clearTimeout(_saveTimer); await saveState(true);  // 現在の作図を保存してから切替(消えないように)
-  await openPlan(s, p);
+  await openPlan(s, p);                             // 保存は openPlan 冒頭の flushSave が受け持つ
 }
 
 // ===== 保存 / 読み込み(現場ごと) =====
@@ -335,7 +335,22 @@ async function saveState(manual) {
   } catch { document.getElementById('saveInfo').textContent = '保存失敗'; }
 }
 let _saveTimer;
-function scheduleSave() { if (!S._loaded) return; clearTimeout(_saveTimer); _saveTimer = setTimeout(() => saveState(false), 800); }
+// 予約したときの図面キーを覚えておき、発火時に別の図面へ移っていたら捨てる。
+// 図面の切替は /api/pdf の取得に数秒かかるので、その間に古い予約が発火すると
+// 「前の図面の作図が、次に開いた図面のキーで保存される」=他の図面に要素が載る事故になる。
+function scheduleSave() {
+  if (!S._loaded) return;
+  const key = S.siteKey;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => { if (S.siteKey === key) saveState(false); }, 800);
+}
+// 予約中の自動保存を今すぐ確定させる(図面を切り替える前に必ず通す)
+async function flushSave() {
+  clearTimeout(_saveTimer);
+  // PDF一括出力は図面を次々に開くだけ(内容は変えない)。冒頭で保存済みなので毎回保存し直さない
+  if (!S._loaded || !S.siteKey || S._exporting) return;
+  await saveState(true);
+}
 function clearAllDrawings() {
   if (!S.elements.length) return;
   if (!confirm('描いたもの(凡例含む)をすべて削除しますか?')) return;

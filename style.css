@@ -102,6 +102,7 @@ html, body { margin: 0; height: 100%; font-family: "Segoe UI", "Meiryo", sans-se
 .navmenu .panel .navlink.active { background: #eff6ff; color: #2563eb; }
 .navcaret { color: #94a3b8; font-size: 12px; }
 .navsites { display: flex; flex-direction: column; flex: 1; min-height: 0; margin: 2px 0 8px; }
+.navsites[hidden] { display: none; }   /* display指定はhidden属性の既定(display:none)を打ち消すので明示する */
 #navSiteSearch { padding: 8px 10px; font-size: 13px; border: 1px solid #cdd5e3; border-radius: 8px; margin-bottom: 8px; }
 .navsitelist .siteitem { flex-direction: column; align-items: flex-start; gap: 3px; padding: 9px 11px; font-size: 13px; }
 .navsitelist .planitem { padding-left: 20px; }
