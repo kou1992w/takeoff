@@ -38,6 +38,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 
 // ===== 初期化 =====
 function init() {
+  initBackNav();   // 最初に入れる。この後(Konva/CDN等)で落ちても「戻る=アプリ離脱」にはしない
   const wrap = document.getElementById('stageWrap');
   S.stage = new Konva.Stage({ container: 'stage', width: wrap.clientWidth, height: wrap.clientHeight });
   S.bgLayer = new Konva.Layer(); S.shapeLayer = new Konva.Layer(); S.previewLayer = new Konva.Layer();
@@ -52,7 +53,6 @@ function init() {
   setupUI();
   renderLegend();
   setTool('select');
-  initBackNav();
   loadSites();
 }
 
@@ -396,7 +396,9 @@ function initBackNav() {
   catch (e) { HIST_OK = false; return; }
   window.addEventListener('popstate', () => {
     if (!HIST_OK) return;
-    closeOneLayer();                                                      // 閉じるものが無ければ何もしない
+    // closeOneLayer が落ちても必ず積み直す。積み直しを飛ばすと、次の「戻る」で
+    // ページごと離脱してログインの履歴まで遡ってしまう(Googleまで戻る)。
+    try { closeOneLayer(); } catch (e) { }                                // 閉じるものが無ければ何もしない
     try { history.pushState({ tk: 1 }, ''); } catch (e) { HIST_OK = false; }
   });
   // 離脱後に「進む」で戻ってきたとき(bfcache復帰=再読み込みされない)も、また1つ積み直す

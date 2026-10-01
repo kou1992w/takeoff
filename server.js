@@ -420,7 +420,13 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 function serveFile(res, file) {
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404); res.end('not found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' });
+    const ext = path.extname(file).toLowerCase();
+    const head = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
+    // 画面を作るファイルは毎回取り直させる。これが無いとブラウザが古い app.js / style.css を
+    // 使い続け、直したはずの不具合が端末によって残る(戻るが効かない等の原因になった)。
+    // PDF等の重いファイルには付けない(従来どおりキャッシュさせる)。
+    if (ext === '.html' || ext === '.js' || ext === '.css') head['Cache-Control'] = 'no-cache';
+    res.writeHead(200, head);
     res.end(buf);
   });
 }
